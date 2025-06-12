@@ -1,0 +1,102 @@
+---
+techopsCiVer: 1
+
+ALLOW_MULTI_BRANCH_DEPLOY: true
+DEPLOY_FROM_RELEASES: true
+
+pipelines:
+  algo-features:
+    ciParams:
+      prodBucket: airflow-algo-prod-nbcu-ds-prod-001/algo_features
+      stageBucket: airflow-algo-int-nft-nbcu-ds-int-nft-001/algo_features
+      devBucket: airflow-algo-int-001-nbcu-ds-stable-int-001/algo_features
+      imagePath: us-west2-docker.pkg.dev/res-nbcupea-mgmt-003/algo-docker/offline
+
+    jobs:
+      build:
+        autoTriggerFrom: [mainBranch]
+        allowedBranches: [devBranch, mainBranch, release]
+        tasks:
+          - type: buildImage
+            params:
+              IMAGE_PATH: ${{imagePath}}
+
+      deploy-dev:
+        autoTriggerFrom: [devBranch, mainBranch, release]
+        allowedBranches: [devBranch, mainBranch, release]
+        tasks:
+          - type: bash
+            name: gen-&-push-dags-to-bucket
+            buildContainer: us-docker.pkg.dev/res-nbcupea-mgmt-003/decision-sciences/techops-py3.10:1.0.0
+            params:
+              GCP_CREDENTIALS_JSON: ((ds-keys/nbcu-ds-stable-int-001))
+              AR_SA_KEY: ((ds-keys/container-registry-rw-sa))
+              BUCKET_PATH: ${{devBucket}}
+              IMAGE_PATH: ${{imagePath}}
+              DEPLOY_ENV: dev
+            entryPoint: cd/gen-push-dags.sh
+
+      deploy-stage:
+        autoTriggerFrom: [devBranch, mainBranch, release]
+        allowedBranches: [devBranch, mainBranch, release]
+        tasks:
+          - type: bash
+            name: gen-&-push-dags-to-bucket
+            buildContainer: us-docker.pkg.dev/res-nbcupea-mgmt-003/decision-sciences/techops-py3.10:1.0.0
+            params:
+              GCP_CREDENTIALS_JSON: ((ds-keys/nbcu-ds-int-nft-001))
+              AR_SA_KEY: ((ds-keys/container-registry-rw-sa))
+              BUCKET_PATH: ${{stageBucket}}
+              IMAGE_PATH: ${{imagePath}}
+              DEPLOY_ENV: stage
+            entryPoint: cd/gen-push-dags.sh
+
+      deploy-prod:
+        autoTriggerFrom: []
+        allowedBranches: [mainBranch, release]
+        tasks:
+          - type: bash
+            name: gen-&-push-dags-to-bucket
+            buildContainer: us-docker.pkg.dev/res-nbcupea-mgmt-003/decision-sciences/techops-py3.10:1.0.0
+            params:
+              GCP_CREDENTIALS_JSON: ((ds-keys/nbcu-ds-prod-001))
+              BUCKET_PATH: ${{prodBucket}}
+              AR_SA_KEY: ((ds-keys/container-registry-rw-sa))
+              IMAGE_PATH: ${{imagePath}}
+              DEPLOY_ENV: prod
+            entryPoint: cd/gen-push-dags.sh
+
+    pr-checks:
+      parallelTasks:
+        - type: bash
+          name: linting-ruff
+          buildContainer: us-docker.pkg.dev/res-nbcupea-mgmt-003/decision-sciences/techops-py3.10:1.0.0
+          entryPoint: cd/linting-ruff.sh
+
+        - type: bash
+          name: format-ruff
+          buildContainer: us-docker.pkg.dev/res-nbcupea-mgmt-003/decision-sciences/techops-py3.10:1.0.0
+          entryPoint: cd/format-ruff.sh
+
+        - type: bash
+          name: pyright-tests
+          buildContainer: us-docker.pkg.dev/res-nbcupea-mgmt-003/decision-sciences/techops-py3.10:1.0.0
+          entryPoint: cd/pyright-tests.sh
+
+        - type: bash
+          name: unit-tests
+          buildContainer: us-docker.pkg.dev/res-nbcupea-mgmt-003/decision-sciences/techops-py3.10:1.0.0
+          entryPoint: cd/unit-tests.sh
+
+    change_ticket:
+      template: NBCU NA - ﻿Decision Sciences NBCU -  Algo Features Release
+      source:
+        prism_cmdb_ci: NBCU - Decision Sciences NBCU - Algo Features
+        prism_short_description: NBCU NA -  Decision Sciences NBCU -  Algo Features Release
+        prism_assignment_group: Peacock Decision Sciences - Algo
+
+resources:
+  sourceRepo:
+    name: src-algo-features
+    uri: https://github.com/NBCUDTC/src-algo-features.git
+    mainBranch: main
