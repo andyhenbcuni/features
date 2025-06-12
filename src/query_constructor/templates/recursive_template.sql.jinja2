@@ -1,0 +1,32 @@
+{% if run_day == start_date %}
+{{ query }}
+{% else %}
+SELECT
+DATE("{{run_day}}") as {{ partition_field }},
+{% for key in join_key -%}
+{{key}},
+{% endfor -%}
+{% for field in aggregation_fields -%}
+	{% if accumulation_method == 'cumulative_sum' %}
+	IFNULL(a.{{field.name}}, 0) + IFNULL(b.{{field.name}}, 0) as {{field.name}},
+	{% endif %}
+	{% if accumulation_method == 'coalesce' %}
+	COALESCE(a.{{field.name}}, b.{{field.name}}) as {{field.name}},
+	{% endif %}
+	{% if accumulation_method == 'max' %}
+	MAX(a.{{field.name}}, b.{{field.name}}) as {{field.name}},
+	{% endif %}
+	{% if accumulation_method == 'greatest' %}
+	GREATEST(a.{{field.name}}, b.{{field.name}}) as {{field.name}},
+	{% endif %}
+{% endfor -%}
+FROM
+(
+	SELECT  *
+	FROM `{{ algo_project }}.{{ dataset }}.{{ table_name }}`
+	WHERE {{ partition_field }} = DATE('{{ run_day }}') - 1
+) AS a
+FULL OUTER JOIN
+({{ query}})  as b
+USING ({{ ', '.join(join_key) }})
+{% endif %}

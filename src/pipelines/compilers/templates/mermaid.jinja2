@@ -1,0 +1,10 @@
+---
+title: {{ name }}
+---
+graph LR
+{% for edge in edges -%}
+{{' ---> '.join(edge) }}
+{% endfor -%}
+{% for node in unconnected_nodes -%}
+{{ node }}
+{% endfor -%}

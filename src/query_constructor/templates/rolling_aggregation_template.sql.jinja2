@@ -1,0 +1,116 @@
+{%- if run_day == start_date -%}
+SELECT
+  DATE('{{ run_day }}') as {{ partition_field }},
+  {{ join_key }},
+{%- for feature in features %}
+{%- for aggregation in aggregations %}
+{%- for window_length in window_lengths %}
+{%- if aggregation == 'cumulative_sum' %}
+  cast({{ feature }} AS FLOAT64) AS {{ aggregation }}_{{feature}}_{{window_type}}_{{window_length}},
+{%- elif aggregation == 'average' %}
+  cast({{ feature }} as float64) AS {{ aggregation }}_{{feature}}_{{window_type}}_{{window_length}},
+{%- else -%}
+  {{ raise_template_exception('Invalid aggregation. Only cumulative_sum and average are supported.')}}
+{%- endif %}
+{%- endfor -%}
+{%- endfor -%}
+{%- endfor %}
+FROM
+  {{ algo_project }}.{{ dataset }}.{{ upstream_table }}  as todays_data
+WHERE
+  {{ partition_field }} = '{{ run_day }}'
+  AND {{join_key}} IS NOT NULL
+{%- else -%}
+SELECT
+  DATE('{{ run_day }}') as {{ partition_field }},
+  {{ join_key }},
+{%- for feature in features %}
+{%- for aggregation in aggregations %}
+{%- for window_length in window_lengths %}
+CASE
+  WHEN yesterdays_data.{{ aggregation }}_{{feature}}_{{ window_type }}_{{ window_length}} is not null
+    THEN
+{%- if aggregation == 'cumulative_sum' %}
+      CAST(
+        NULLIF(
+          (
+            IFNULL(todays_data.{{ feature }}, 0) +
+            IFNULL(yesterdays_data.{{ aggregation }}_{{feature}}_{{ window_type }}_{{ window_length}}, 0) -
+            IFNULL(previous_{{ window_length }}_{{window_type}}.{{feature}}, 0)
+          ),
+          0
+        ) AS FLOAT64
+     )
+{%- elif aggregation == 'average' %}
+CASE
+    WHEN ABS(CAST(
+      NULLIF(
+            (
+            IFNULL(todays_data.{{ feature }}, 0) +
+            ({{ window_length }} * IFNULL(yesterdays_data.{{ aggregation }}_{{feature}}_{{ window_type }}_{{ window_length }}, 0)) -
+            IFNULL(previous_{{ window_length }}_{{window_type}}.{{feature}}, 0)
+            ),
+            0
+           ) AS FLOAT64
+         ) / {{ window_length }} )< 0.00001 THEN 0
+    ELSE
+      CAST(
+        NULLIF(
+          (
+           IFNULL(todays_data.{{ feature }}, 0) +
+           ({{ window_length }} * IFNULL(yesterdays_data.{{ aggregation }}_{{feature}}_{{ window_type }}_{{ window_length}}, 0)) -
+           IFNULL(previous_{{ window_length }}_{{window_type}}.{{feature}}, 0)
+          ),
+          0
+        ) AS FLOAT64
+      ) / {{window_length}}
+    END
+{%- else -%}
+  {{ raise_template_exception('Invalid aggregation. Only cumulative_sum and average are supported.')}}
+{%- endif %}
+  ELSE todays_data.{{ feature }}
+END AS {{ aggregation }}_{{feature}}_{{ window_type }}_{{ window_length}},
+{%- endfor -%}
+{%- endfor -%}
+{%- endfor %}
+FROM
+(
+  SELECT
+    {{ join_key }},
+  {%- for feature in features %}
+    {{feature}},
+  {%- endfor -%}
+  FROM
+    {{ algo_project }}.{{ dataset }}.{{ upstream_table }}
+  WHERE
+    {{ partition_field }} = '{{ run_day }}'
+) as todays_data
+{# this is an ASSUMPTION #}
+{%- for window_length in window_lengths %}
+FULL OUTER JOIN
+(
+  SELECT
+    {{ join_key }},
+  {%- for feature in features %}
+    {{feature}},
+  {%- endfor -%}
+  FROM
+    {{ algo_project }}.{{ dataset }}.{{ upstream_table }}
+  WHERE
+    {{ partition_field }} = DATE_SUB('{{ run_day }}', INTERVAL {{ window_length }} {{ window_type }})
+) AS previous_{{ window_length }}_{{window_type}}
+USING ({{ join_key }})
+{%- endfor %}
+FULL OUTER JOIN
+(
+  SELECT
+    *
+  FROM
+    {{ algo_project }}.{{ dataset }}.{{ table_name }}
+  WHERE
+    {{ partition_field }} = DATE_SUB(DATE('{{ run_day }}'), INTERVAL 1 day)
+) AS yesterdays_data
+{# this is an ASSUMPTION #}
+USING ({{ join_key }})
+WHERE {{join_key}} IS NOT NULL
+{% endif %}

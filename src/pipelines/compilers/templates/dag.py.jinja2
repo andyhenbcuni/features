@@ -1,0 +1,55 @@
+import functools
+import json
+from datetime import timedelta
+from typing import Any
+
+from airflow import models
+from airflow.models import variable
+from airflow.providers.google.cloud.operators import kubernetes_engine
+from airflow.providers.slack.hooks.slack_webhook import SlackWebhookHook
+from airflow.utils import task_group
+from dateutil import parser
+import shlex
+
+
+SLACK_WEBHOOK = SlackWebhookHook(slack_webhook_conn_id="slack_connection_id")
+EMOJI_MAP: dict[str, str] = {
+    "failed": "red-siren",
+    "up_for_retry": "warning",
+    "success": "check-green",
+}
+
+
+{% for alert in alerts%}
+{{alert}}
+{% endfor%}
+
+{{operator}}
+
+
+
+
+with models.DAG(
+	dag_id='{{ pipeline.name }}',
+	start_date=parser.parse('{{ pipeline.trigger.start_date if pipeline.trigger else "2024-01-01" }}'),
+	schedule_interval='{{ pipeline.trigger.schedule if pipeline.trigger else "" }}' or None,
+	max_active_runs=1,
+	catchup=False,
+	on_success_callback=get_slack_alert_from_context,
+	access_control={{access_control}},
+    sla_miss_callback=sla_miss_callback,
+) as dag:
+    {% for task in pipeline.tasks -%}
+    {{ task.name.lower() }} = get_operator(
+        task_id='{{ task.name }}',
+        action='{{ task.action.__name__ }}',
+        parameters={{ task.parameters }} | {{ run_time_parameters }},
+        retries={{ task.retries }},
+        retry_delay=timedelta(minutes={{ task.retry_delay.total_seconds() | int // 60 }}),
+    )
+    {% endfor %}
+    {% for task in pipeline.tasks if task.depends_on %}
+    {% for dependency in task.depends_on %}
+    {{ dependency.lower() }} >> {{ task.name.lower() }}
+	{% endfor %}
+	{% endfor %}

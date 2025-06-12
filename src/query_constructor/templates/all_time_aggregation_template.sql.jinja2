@@ -1,0 +1,72 @@
+{%- if run_day == start_date -%}
+SELECT
+  DATE('{{ run_day }}') as {{ partition_field }},
+  {{join_key}},
+{%- for feature in features %}
+{%- for aggregation in aggregations %}
+{%- if aggregation == 'cumulative_sum' %}
+  CAST({{ feature }} AS FLOAT64) AS {{ aggregation }}_{{feature}},
+{%- elif aggregation == 'greatest' %}
+  CAST({{ feature }} AS FLOAT64) AS {{ aggregation }}_{{feature}},
+{%- else -%}
+  {{ raise_template_exception('Invalid aggregation. Only cumulative_sum is supported.')}}
+{%- endif %}
+{%- endfor -%}
+{%- endfor %}
+FROM
+  {{ algo_project }}.{{ dataset }}.{{ upstream_table }}  as todays_data
+WHERE
+  {{ partition_field }} = '{{ run_day }}'
+  AND {{join_key}} IS NOT NULL
+{%- else -%}
+SELECT
+  DATE('{{ run_day }}') as {{ partition_field }},
+  {{join_key}},
+{%- for feature in features %}
+{%- for aggregation in aggregations %}
+CASE
+  WHEN yesterdays_data.{{ aggregation }}_{{feature}} is not null
+    THEN
+{%- if aggregation == 'cumulative_sum' %}
+      CAST(
+        NULLIF(
+          IFNULL(todays_data.{{ feature }}, 0) + IFNULL(yesterdays_data.{{ aggregation }}_{{feature}}, 0)
+          , 0
+        ) AS FLOAT64
+     )
+{%- elif aggregation == 'greatest' %}
+  CAST(
+    GREATEST(todays_data.{{ feature }}, yesterdays_data.{{ feature }}) AS FLOAT64
+  ) as {{ aggregation }}_{{ feature }}
+{%- else -%}
+  {{ raise_template_exception('Invalid aggregation. Only cumulative_sum is supported.')}}
+{%- endif %}
+  ELSE todays_data.{{ feature }}
+END AS {{ aggregation }}_{{feature}},
+{%- endfor -%}
+{%- endfor %}
+FROM
+(
+  SELECT
+    adobe_tracking_id,
+  {%- for feature in features %}
+    {{feature}},
+  {%- endfor -%}
+  FROM
+    {{ algo_project }}.{{ dataset }}.{{ upstream_table }}
+  WHERE
+    {{ partition_field }} = '{{ run_day }}'
+) as todays_data
+FULL OUTER JOIN
+(
+  SELECT
+    *
+  FROM
+    {{ algo_project }}.{{ dataset }}.{{ table_name }}
+  WHERE
+    {{ partition_field }} = DATE_SUB(DATE('{{ run_day }}'), INTERVAL 1 day)
+) AS yesterdays_data
+{# this is an ASSUMPTION #}
+USING ({{join_key}})
+WHERE {{join_key}} IS NOT NULL
+{% endif %}
