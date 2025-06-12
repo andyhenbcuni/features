@@ -1,0 +1,9 @@
+select
+    stub_join,
+    stub_partition,
+    max(stub_a)
+from
+    stub_source
+where
+    stub_partition={{run_day}}
+group by 1,2

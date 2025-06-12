@@ -1,0 +1,7 @@
+template: recursive_template
+template_fields:
+  partition_field: stub_partition
+  join_key: [stub_join]
+  accumulation_method: max
+  query: mock_recursive_task_base_query.sql.jinja2
+  aggregation_fields: [stub_a]
