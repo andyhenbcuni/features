@@ -1,0 +1,17 @@
+/* Check that the number of unique partition_ids
+   that are between 'max_day_span' days ago and current
+   date is the same as 'max_day_span'
+   i.e. no gap in dates
+*/
+ASSERT
+  (
+  SELECT
+    COUNT(DISTINCT(partition_id))
+  FROM
+    `{{ algo_project }}.algo_features.INFORMATION_SCHEMA.PARTITIONS`
+  WHERE
+    table_name = 'base'
+    AND parse_DATE('%Y%m%d',
+      partition_id) < "{{ run_day }}"
+    AND parse_DATE('%Y%m%d',
+      partition_id) >= DATE("{{ run_day }}") - 365) = 365

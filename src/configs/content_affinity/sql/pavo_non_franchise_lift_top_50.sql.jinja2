@@ -1,0 +1,54 @@
+/*
+Gets overlap stats for top 50 titles.
+*/
+WITH
+  content_affinity AS (
+  SELECT
+    *
+  FROM
+    -- TODO: pass in table names from config
+    `{{ algo_project }}.{{ dataset }}.content_affinity` ca
+  WHERE
+    rollup_type = 'non_franchise'
+    AND day = '{{ run_day }}' ),
+  top_50 AS (
+  SELECT
+    *
+  FROM (
+    SELECT
+      day,
+      CAST(day_span AS numeric) AS day_span,
+      content_a primary_content,
+      ROW_NUMBER() OVER(PARTITION BY day_span ORDER BY n_a DESC) rn
+    FROM (
+      SELECT
+        DISTINCT day,
+        day_span,
+        content_a,
+        n_a
+      FROM
+        content_affinity))
+  WHERE
+    rn <=50 )
+SELECT
+  top_50.day,
+  top_50.day_span,
+  top_50.primary_content,
+  top_50.rn AS primary_rank,
+  b2.primary_content AS comparison_content,
+  b2.rn AS comparison_rank,
+  overlap_as_percent_of_content_A,
+FROM
+  top_50
+CROSS JOIN
+  top_50 AS b2
+LEFT JOIN
+  content_affinity ca
+ON
+  top_50.primary_content = content_a
+  AND b2.primary_content = content_b
+  AND top_50.day_span = CAST(ca.day_span AS numeric)
+  AND b2.day_span = CAST(ca.day_span AS numeric)
+WHERE
+  top_50.day_span = b2.day_span
+  AND top_50.primary_content != b2.primary_content

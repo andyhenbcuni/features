@@ -1,0 +1,39 @@
+-- format and select affinity metrics to display on PAVO
+
+-- Prevents selecting duplicate rows, by assigning a row number to each partition. We will
+-- later filter using that row number.
+WITH data AS (
+  SELECT *, ROW_NUMBER() OVER(PARTITION BY day_span, rollup_type, content_a, content_b) AS row_num
+  FROM `{{ algo_project }}.{{ dataset }}.content_affinity`
+  WHERE day='{{ run_day }}'
+  AND (
+    (day_span=365 AND n_ab >= 5000) OR
+    (day_span=90 AND n_ab >= 1000) OR
+    (day_span=30 AND n_ab >= 1000)
+  )
+)
+
+SELECT
+  DISTINCT
+  day,
+  CASE
+    WHEN rollup_type = 'non_franchise' THEN 'non-franchise'
+  ELSE rollup_type
+  END AS rollup_type,
+  day_span,
+  content_a,
+  content_b,
+  n_a,
+  n_b,
+  n_ab,
+  n_a_then_b,
+  n_b_then_a,
+  lift,
+  imbalance_ratio,
+  directional_lift,
+  inverse_directional_lift,
+  directional_lift_flow_ratio
+FROM
+  data
+WHERE
+  row_num=1

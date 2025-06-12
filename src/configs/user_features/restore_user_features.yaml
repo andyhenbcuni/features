@@ -1,0 +1,40 @@
+port: pipeline
+name: restore_user_features
+trigger: null
+tasks:
+- name: restore_user_features
+  action: restore_table_from_backup
+  src: src/actions
+  parameters:
+    backup_table_name: user_features_backup
+    destination_table_name: user_features
+- name: restore_silver_video_daily_rollup
+  action: restore_table_from_backup
+  src: src/actions
+  parameters:
+    backup_table_name: silver_video_daily_rollup_backup
+    destination_table_name: silver_video_daily_rollup
+- name: restore_silver_video_all_time_rollup
+  action: restore_table_from_backup
+  src: src/actions
+  parameters:
+    backup_table_name: silver_video_all_time_rollup_backup
+    destination_table_name: silver_video_all_time_rollup
+- name: restore_silver_video_daily_rollup_agg
+  action: restore_table_from_backup
+  src: src/actions
+  parameters:
+    backup_table_name: silver_video_daily_rollup_agg_backup
+    destination_table_name: silver_video_daily_rollup_agg
+- name: restore_silver_user_daily_rollup
+  action: restore_table_from_backup
+  src: src/actions
+  parameters:
+    backup_table_name: silver_user_daily_rollup_backup
+    destination_table_name: silver_user_daily_rollup
+- name: restore_trial_features
+  action: restore_table_from_backup
+  src: src/actions
+  parameters:
+    backup_table_name: trial_features_backup
+    destination_table_name: trial_features

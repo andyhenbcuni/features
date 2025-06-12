@@ -1,0 +1,45 @@
+port: pipeline
+name: content_affinity_base
+trigger:
+  schedule: "0 12 * * *"
+  start_date: "2024-01-01"
+tasks:
+- name: silver_video
+  action: check_bq_partition
+  src: src/actions
+  parameters:
+    dataset: PeacockDataMartSilver
+    table_name: SILVER_VIDEO
+- name: silver_user
+  action: check_bq_partition
+  src: src/actions
+  parameters:
+    dataset: PeacockDataMartSilver
+    table_name: SILVER_USER
+- name: base
+  depends_on: [silver_video, silver_user]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    partition_field: day
+    start_date: '2023-01-01'
+    table_name: base
+    upstream_table_names: []
+- name: user_content_watchtimes
+  depends_on: [base]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    start_date: '2023-01-01'
+    partition_field: day
+    table_name: user_content_watchtimes
+    upstream_table_names: ['base']
+- name: first_watch_timestamps
+  depends_on: [base]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    start_date: '2023-01-01'
+    partition_field: day
+    table_name: first_watch_timestamps
+    upstream_table_names: ['base']

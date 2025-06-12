@@ -1,0 +1,94 @@
+/*
+Creates the content affinity table, which is used
+to power the content affinity dashboard.
+*/
+SELECT DISTINCT
+    day,
+    day_span,
+    IF(rollup_franchise, 'franchise', 'non_franchise') AS rollup_type,
+    permutation_counts.content_a,
+    permutation_counts.content_b,
+    n_a, -- reach of content a
+    n_b, -- reach of content a
+    n_a_intersect_b AS n_ab, -- co-viewing reach of a and b
+    n, -- total number of unqiue users
+    COALESCE(n_a_then_b, 0) AS n_a_then_b, -- number of people who watched b after watching a in timespan
+    COALESCE(n_b_then_a, 0) AS n_b_then_a, -- number of people who watched a after watching b in timespan
+    /*
+    lift formula = support(a,b)/ (support(a) * support(b))
+                = (n_ab/n)/ (n_a/n * n_b/n)
+                = n_ab * n / (n_a * n_b)
+    */
+    safe_divide((n_a_intersect_b * n),
+        (n_a * n_b)) AS lift,
+    safe_divide(1,
+        ((n_a_intersect_b * n)/(n_a * n_b))) AS distance, --inverse of lift
+    /*
+    directional lift formula = P(a → b)/ P(b)
+                             = (n_a→b/n_a)/(n_b/n)
+                             = (n_a→b * n)/(n_a * n_b)
+    */
+    COALESCE(safe_divide((n_a_then_b * n), (n_a * n_b)), 0) AS directional_lift,
+    COALESCE(safe_divide((n_b_then_a * n), (n_a * n_b)), 0) AS inverse_directional_lift,
+    /*
+    directional lift flow ratio = directional_lift(a→b)/lift(a→b)
+                                = ((n_a→b * n)/(n_a * n_b)) * ((n_a * n_b)/(n_ab * n))
+                                = n_a→b/n_ab
+
+    Reason for this:
+    lift = directional_lift(a→b) + directional_lift(b→a), as
+    n_a_intersect_b = n_a→b + n_b→a
+    Therefore, directional lift flow ratio tells you how much of the lift is a→b, where
+    0.5 means an even distribution between a→b and b→a, 1 means a→b is responsible for all
+    of the lift, and 0 means b→a is responsible for all of the lift.
+    */
+    COALESCE(safe_divide(n_a_then_b, n_a_intersect_b), 0) AS directional_lift_flow_ratio,
+    /*
+    imbalance_ratio: measures if two pieces content are viewed proportionately
+      - ranges from 0 to 1
+      - the bigger the number, the more disproportionate
+    */
+    ABS(safe_divide((n_a - n_b),
+            (n_a + n_b - n_a_intersect_b))) AS imbalance_ratio,
+    ROUND(safe_divide(n_a_intersect_b,
+            n_a), 10) AS overlap_as_percent_of_content_A,
+    ROUND(safe_divide(n_a_intersect_b,
+            n_b), 10) AS overlap_as_percent_of_content_B,
+    ROUND(safe_divide(n_a_intersect_b,
+            (n_a + n_b - n_a_intersect_b)), 10) AS jaccard_index, -- measures similarity
+    1 - ROUND(safe_divide(n_a_intersect_b,
+            (n_a + n_b - n_a_intersect_b)), 10) AS jaccard_distance, -- measures dissimilarity
+    ROUND(safe_divide(n_a_intersect_b,
+            LEAST(n_a, n_b)), 10) AS overlap_coefficient, -- the largest overlap of the two sets
+    (n_a + n_b - n_a_intersect_b) AS union_viewers, -- total unique viewers of content a and b
+    TIMESTAMP(DATE('{{ run_day }}') - day_span) AS adobe_start_date,
+    TIMESTAMP('{{ run_day }}') AS adobe_end_date
+FROM
+    `{{ algo_project }}.{{ dataset }}.permutation_counts` permutation_counts
+LEFT JOIN
+    `{{ algo_project }}.{{ dataset }}.user_counts` user_counts
+USING (day, day_span, rollup_franchise)
+LEFT JOIN (
+      SELECT
+        day_span,
+        rollup_franchise,
+        content AS content_a,
+        content_count AS n_a,
+      FROM
+        `{{ algo_project }}.{{ dataset }}.content_counts`
+      WHERE day='{{ run_day }}') a
+USING (day_span, rollup_franchise, content_a)
+LEFT JOIN (
+      SELECT
+        day_span,
+        rollup_franchise,
+        content AS content_b,
+        content_count AS n_b,
+      FROM
+        `{{ algo_project }}.{{ dataset }}.content_counts`
+      WHERE day='{{ run_day }}'
+) b
+USING (day_span, rollup_franchise, content_b)
+WHERE
+    permutation_counts.content_a != permutation_counts.content_b
+    AND day = '{{ run_day }}'

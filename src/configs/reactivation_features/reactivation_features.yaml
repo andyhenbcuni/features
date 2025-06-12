@@ -1,0 +1,128 @@
+# name: reactivation_features
+# schedule:
+#   cron: "0 20 * * *"
+#   start: "2023-12-02"
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2024-03-27"
+#   sql: reactivation_features.sql.jinja2
+#   upstream_table_names: [user_segments, deeplinks,email_unsubscribes, first_view, last_view,lapse_helper]
+#   partition_field: day
+# upstream: [user_segments, deeplinks,email_unsubscribes, first_view, last_view,lapse_helper] # silver_user
+# ---
+# name: deeplinks
+# upstream: [silver_video]
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2023-01-01"
+#   partition_field : day
+#   recursive: True
+#   join_key: adobe_tracking_id
+#   accumulation_method: greatest
+# ---
+# name: email_unsubscribes
+# upstream: [silver_mparticle_braze]
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2023-01-01"
+#   partition_field : day
+# ---
+# name: video
+# upstream: [silver_video] # sport_lookup_table  current_season_lookup
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2023-01-01"
+#   partition_field: day
+# ---
+# name: first_view # TODO: is this recursive?
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2023-01-01"
+#   partition_field: day
+#   recursive: True
+#   join_key: adobe_tracking_id
+# upstream: [video]
+# ---
+# name: last_view
+# upstream: [silver_primary_devices]
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2023-09-14"
+#   partition_field: day
+# ---
+# name: all_account_segmentation_90day
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2023-01-01"
+#   partition_field: day
+# upstream: [video, silver_primary_devices]
+# ---
+# name: all_account_segmentation_90day_buckets
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2023-01-01"
+#   partition_field: day
+# upstream: [all_account_segmentation_90day]
+# ---
+# name: user_segments
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2023-01-01"
+#   partition_field: day
+# upstream: [all_account_segmentation_90day_buckets]
+port: pipeline
+name: reactivation_features
+trigger: null
+tasks:
+- name: silver_video
+  action: check_bq_partition
+  src: src/actions
+  parameters:
+    dataset: PeacockDataMartSilver
+    table_name: SILVER_VIDEO
+- name: silver_user
+  action: check_bq_partition
+  src: src/actions
+  parameters:
+    dataset: PeacockDataMartSilver
+    table_name: SILVER_USER
+# name: silver_mparticle_braze
+# resource:
+#   name: ExternalBigQueryTable
+#   dataset: PeacockDataMartSilver
+#   table_name: SILVER_MPARTICLE_BRAZE
+# actions:
+#   - check_partition
+# ---
+# name: silver_primary_devices
+# resource:
+#   name: ExternalBigQueryTable
+#   dataset: PeacockDataMartSilver
+#   table_name: SILVER_PRIMARY_DEVICES
+# actions:
+#   - check_partition
+# # ---
+# # name: current_season_lookup
+# # resource:
+# #   name: ExternalBigQueryTable
+# #   dataset: feed
+# #   table_name: CURRENT_SEASON_LOOKUP
+# # actions:
+# #   - check_partition
+# ---
+# name: lapse_helper
+# resource:
+#   name: ManagedBigQueryTable
+#   start_date: "2023-01-01"
+#   partition_field: day
+#   recursive: True
+#   join_key: adobe_tracking_id
+#   accumulation_method: greatest
+# upstream: [silver_user]
+# # ---
+# # name: sport_lookup_table # TODO: this table is not partitioned, to support ExternalBigQueryTable needs another check method, likely built on `get_table` and making a decision what to do based on table attributes, e.g. if its partitioned or not.
+# # resource:
+# #   name: ExternalBigQueryTable
+# #   dataset: dasc_reactivation_model
+# # actions:
+# #   - check_partition

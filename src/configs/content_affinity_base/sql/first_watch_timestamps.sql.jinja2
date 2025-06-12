@@ -1,0 +1,55 @@
+-- Get the "first watch times" for each adobe tracking id and content item
+{%- if run_day == start_date %}
+
+SELECT
+  DATE('{{ run_day }}') as day,
+  adobe_tracking_id,
+  c.content AS content_item,
+  UPPER(consumption_type)='VOD' AS is_vod,
+  MIN(r.adobe_timestamp) AS first_watch_timestamp
+FROM `{{ algo_project }}.algo_features.base`,
+UNNEST(unique_content_viewed) AS c,
+UNNEST(c.requests) AS r
+WHERE
+    ( -- filters for all titles
+      r.seconds_watched / 60 >= 5
+      AND day = '{{ run_day }}'
+    )
+    AND UPPER(consumption_type) != 'VIRTUAL CHANNEL'
+    AND UPPER(c.content) != 'AFFILIATE CHANNELS'
+GROUP BY 1, 2, 3, 4
+{%- else %}
+
+SELECT
+DATE("{{ run_day }}") as day,
+adobe_tracking_id,
+content_item,
+is_vod,
+COALESCE(a.first_watch_timestamp, b.first_watch_timestamp) as first_watch_timestamp
+FROM
+(
+	SELECT  *
+	FROM `{{ algo_project }}.algo_features.first_watch_timestamps`
+	WHERE day = DATE('{{ run_day }}') - 1
+) AS a
+FULL OUTER JOIN
+(-- Get the "first watch times" for each adobe tracking id and content item
+SELECT
+  DATE('{{ run_day }}') as day,
+  adobe_tracking_id,
+  c.content AS content_item,
+  UPPER(consumption_type)='VOD' AS is_vod,
+  MIN(r.adobe_timestamp) AS first_watch_timestamp
+FROM `{{ algo_project }}.algo_features.base`,
+UNNEST(unique_content_viewed) AS c,
+UNNEST(c.requests) AS r
+WHERE
+    ( -- filters for all titles
+      r.seconds_watched / 60 >= 5
+      AND day = '{{ run_day }}'
+    )
+    AND UPPER(consumption_type) != 'VIRTUAL CHANNEL'
+    AND UPPER(c.content) != 'AFFILIATE CHANNELS'
+GROUP BY 1, 2, 3, 4)  as b
+USING (adobe_tracking_id, content_item, is_vod)
+{%- endif %}

@@ -1,0 +1,18 @@
+FOR partition_day IN (
+  SELECT
+    PARSE_DATE('%Y%m%d', partition_id) as day
+  FROM
+    `{{ algo_project }}.algo_features.INFORMATION_SCHEMA.PARTITIONS`
+  WHERE
+    table_name = '{{ table_name }}')
+DO
+  ASSERT
+    (
+    SELECT
+      COUNT(1) - COUNT(DISTINCT adobe_tracking_id)
+    FROM
+      `{{ algo_project }}.algo_features.{{ table_name }}`
+    WHERE
+      day = partition_day.day) = 0;
+END
+  FOR;

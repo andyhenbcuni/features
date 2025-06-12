@@ -1,0 +1,24 @@
+/*
+Gets permutation counts (n_ab, n_a_then_b, n_b_then_a)
+for each day, day_span, rollup_franchise, content_a, content_b
+grouping.
+*/
+SELECT DISTINCT
+    day,
+    day_span,
+    rollup_franchise,
+    content_a,
+    content_b,
+    SUM(subset_multiplier) AS n_a_intersect_b,
+    SUM(IF(index_a < index_b, subset_multiplier, 0)) AS n_a_then_b,
+    SUM(IF(index_b < index_a, subset_multiplier, 0)) AS n_b_then_a
+FROM  `{{ algo_project }}.{{ dataset }}.content_subset_counts`
+CROSS JOIN
+    UNNEST(SPLIT(content_subset, '~~~')) AS content_a WITH OFFSET index_a
+CROSS JOIN
+    UNNEST(SPLIT(content_subset, '~~~')) AS content_b WITH OFFSET index_b
+WHERE
+    content_a != content_b
+    AND day = '{{ run_day }}'
+GROUP BY
+    1, 2, 3, 4, 5

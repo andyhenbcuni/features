@@ -1,0 +1,17 @@
+select
+  report_date,
+  adobe_tracking_id as tracking_id,
+  household_id,
+  date_of_last_view,
+  entitlement,
+  bundling_partner,
+  case
+    when entitlement = 'Free' then 'Free'
+    when entitlement = 'Premium' and bundling_partner != 'N/A' then 'Bundled Premium'
+    else 'Paid SVOD'
+  end as sub_type,
+  gross_add_date,
+  date_diff(report_date, gross_add_date, day) + 1 as tenure_days
+from `{{ data_env }}.PeacockDataMartSilver.SILVER_PRIMARY_DEVICES`
+where report_date = "{{ run_day }}"
+and date_of_last_view is not null

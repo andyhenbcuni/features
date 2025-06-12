@@ -1,0 +1,31 @@
+/*
+AMA base table: qualified and unqualified consumption at various aggregations
+*/
+
+SELECT
+	day as adobe_date,
+	franchise,
+	display_name,
+	display_season_number,
+	display_episode_number,
+	entitlement,
+	consumption_type,
+	stream_type,
+	content_type,
+	SUM(qualified_seconds_played)/60 AS usage_qualified_mins,
+	SUM(unqualified_seconds_played)/60 AS usage_unqualified_mins
+FROM `{{ algo_project }}.{{ dataset }}.content_base`
+WHERE
+	day = '{{ run_day }}'
+	AND stream_type != 'trailer'
+	AND display_name NOT LIKE '%(trailer)%'
+GROUP BY
+	day,
+	franchise,
+	display_name,
+	display_season_number,
+	display_episode_number,
+	entitlement,
+	consumption_type,
+	stream_type,
+	content_type

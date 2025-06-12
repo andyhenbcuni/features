@@ -1,0 +1,65 @@
+select
+  adobe_tracking_id,
+  adobe_timestamp,
+  adobe_date AS day,
+  session_id,
+  display_name,
+  num_seconds_played_no_ads,
+  num_views_started,
+  consumption_type,
+  content_type,
+  coppa_flag,
+  franchise,
+  genre,
+  device_name,
+  case when consumption_type = 'Shortform' then 'Shortform'
+      when lower(program) like '%trailer%' or lower(display_name) like '%trailer%' then 'Trailer'
+      else display_name end as program_clean,
+  case when lower(franchise) = 'other' then display_name
+      when franchise in ('Nfl', 'Football') OR display_name in ('Super Bowl Lvi','Super Bowl Lvi Pregame', 'Road To The Super Bowl') then 'Football'
+      when lower(franchise) in ('premier league', 'soccer') then 'PL'
+      WHEN franchise IN ('Olympics','Winter Olympics 2022','Basketball','Nba') THEN 'Olympics'
+      WHEN franchise IN ('Golf','U.s. Open Golf') THEN 'Golf'
+      WHEN franchise IN ('Major League Baseball','Baseball') THEN 'MLB'
+      WHEN franchise IN ('Supercross','Motor Sports','Indycar','Nascar','Pro Motocross','Imsa','Motogp') THEN 'Motor Sports'
+      else franchise end as program_franchise,
+  case when franchise in ('Soccer', 'Premier League', 'Wwe', 'Supercross', 'Football', 'Nfl', 'Golf', 'Motor Sports', 'Rugby', 'Hockey', 'Snow Sports',
+      'Figure Skating', 'Basketball', 'Tennis', 'Baseball', 'Nba', 'Horse Racing', 'Cycling', 'Indycar', 'Major League Baseball' , 'Nascar', 'Track & Field', 'Boxing',
+      'Speed Skating', 'Pro Motocross', 'Lacrosse', 'Olympics', 'Winter Olympics 2022','U.s. Open Golf', 'Racing','Usfl','Imsa','Motogp') then 'Sports'
+      when coalesce(program, display_name) like '% v. %' or coalesce(program, display_name) like '% vs. %' or regexp_contains(lower(coalesce(program, display_name)), r'(main event|supercross)') then 'Sports'
+      else 'Not Sports' end as sports_flag,
+  case
+    when display_name in (select program from `{{ algo_project }}.algo_features.original_titles_film_series`) then 'Original' else 'Not Original' -- TODO: `nbcu-ds-prod-001.Config.original_titles_film_series`
+  end as originals_flag,
+  case
+    when franchise is not null and franchise in ('The Office', 'Yellowstone', 'Parks And Recreation') then 'Exclusive'
+    when franchise is null and display_name in ('The Office', 'Yellowstone', 'Parks And Recreation') then 'Exclusive'
+    else 'Not Exclusive'
+  end as exclusives_flag,
+  case
+    when lower(content_type) = 'movies' then 'Movies'
+    when lower(content_type) = 'tv' then 'Series'
+  end as series_movies,
+  case
+    when cr.title is not null then 'Current Season' else 'No'
+   end as current_szn_flag,
+   case
+    when extract(dayofweek from adobe_date) = 1 or extract(dayofweek from adobe_date) = 7 then 'Weekend'
+    when extract(hour from adobe_timestamp) >= 17 and extract(dayofweek from adobe_date) = 6 then 'Weekend'
+    else 'Week Day'
+  end as timeofweek
+from `{{ data_env }}.PeacockDataMartSilver.SILVER_VIDEO` video
+left join
+  (select event, contentid from `{{ algo_project }}.algo_features.sport_lookup_table`) as sports -- TODO: `nbcu-ds-prod-001.dasc_reactivation_model.sport_lookup_table`
+on
+  video.video_id = sports.contentid
+left join
+  (select * except(content_type) from `{{ data_env }}.feed.CURRENT_SEASON_LOOKUP`) as cr
+on
+  lower(video.display_name) = lower(cr.Title)
+and
+  video.adobe_date >= cr.Peacock_Start_Date
+and
+  video.adobe_date <= cr.Peacock_End_Date
+where num_seconds_played_with_ads >= 5*60
+and adobe_date = "{{ run_day }}"

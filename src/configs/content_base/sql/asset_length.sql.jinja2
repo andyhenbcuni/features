@@ -1,0 +1,15 @@
+SELECT
+  display_name,
+  franchise_map.franchise AS franchise,
+  CASE WHEN display_season_number = -1 THEN NULL ELSE display_season_number END AS display_season_number,
+  CASE WHEN display_episode_number = -1 THEN NULL ELSE display_episode_number END AS display_episode_number,
+  asset_length_daily AS asset_length,
+  first_date AS premiere_date
+FROM
+  `{{ algo_project }}.{{ dataset }}.asset_length_internal`
+LEFT JOIN
+  `{{ data_env }}.PeacockDataMartSilver.SILVER_FRANCHISE_MAP` AS franchise_map
+USING
+  (display_name)
+WHERE
+  adobe_date = DATE('{{ run_day }}')

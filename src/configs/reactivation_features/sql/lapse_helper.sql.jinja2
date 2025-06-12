@@ -1,0 +1,7 @@
+SELECT  DATE('{{ run_day }}')                             AS day,
+        adobe_tracking_id,
+	    MAX(paying_account_flag) AS ever_paid -- Paying > NonPaying
+	FROM `{{ data_env }}.PeacockDataMartSilver.SILVER_USER`
+    WHERE report_date = '{{ run_day }}'
+	GROUP BY  1,
+              2

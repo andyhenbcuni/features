@@ -1,0 +1,15 @@
+SELECT  adobe_tracking_id,
+        day,
+        # TODO: these should be IN final feature query
+        program_clean                                                                                AS fv_program_clean,
+        program_franchise                                                                            AS fv_program_franchise,
+        sports_flag                                                                                  AS fv_sports_flag,
+        originals_flag                                                                               AS fv_originals_flag,
+        exclusives_flag                                                                              AS fv_exclusives_flag,
+        series_movies                                                                                AS fv_series_movies,
+        current_szn_flag                                                                             AS fv_current_szn_flag,
+        timeofweek                                                                                   AS fv_timeofweek,
+        # TODO: end todo
+        row_number() over (partition by adobe_tracking_id ORDER BY adobe_timestamp)                  AS viewing_rank
+FROM `{{ algo_project }}.algo_features.video`
+WHERE day = "{{ run_day }}" qualify viewing_rank = 1

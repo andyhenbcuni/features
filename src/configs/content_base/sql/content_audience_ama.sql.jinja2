@@ -1,0 +1,11 @@
+SELECT
+  cam.Content_Audience AS content_audience,
+  year,
+  month,
+    SUM(usage_qualified_mins) AS usage_qualified_mins,
+    SUM(asset_length) AS asset_length,
+    SUM(usage_qualified_mins) / SUM(asset_length) AS AMA
+FROM `{{ algo_project }}.{{ dataset }}.scc_ama` AS sa
+LEFT JOIN `{{ algo_project }}.caps.scc_ca_map` AS cam
+ON sa.community = cam.Community
+GROUP BY cam.Content_Audience, year, month

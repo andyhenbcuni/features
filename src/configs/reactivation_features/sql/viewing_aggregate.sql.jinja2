@@ -1,0 +1,45 @@
+select
+  report_date,
+  adobe_tracking_id,
+  date_of_last_view,
+  entitlement,
+  bundling_partner,
+  sub_type,
+  gross_add_date,
+  tenure_days,
+  num_seconds_played_no_ads,
+  distinct
+    case when num_views_started = 1 and lower(consumption_type) != 'virtual channel' then program_clean
+      when num_seconds_played_no_ads / 60 >= 5 and lower(consumption_type) = 'virtual channel' then program_clean
+        end as repertoire90,
+  distinct case when num_views_started = 1 then genre end as genre_repertoire,
+  distinct case when num_views_started = 1 then session_id end as viewing_sessions,
+  case when sports_flag = 'Sports' then num_seconds_played_no_ads end as sports_hours,
+  case when current_szn_flag = 'Current Season' then num_seconds_played_no_ads end as current_szn_hours,
+  case  when originals_flag = 'Original' then num_seconds_played_no_ads end as originals_hours,
+  case when series_movies = 'Series' then num_seconds_played_no_ads end as series_hours,
+  case when exclusives_flag = 'Exclusive' then num_seconds_played_no_ads end as exclusive_hours,
+  distinct case when num_views_started = 1 and series_movies = 'Movies' then program_clean end as distinct_movies,
+  distinct case when num_views_started = 1 then day end as viewing_days,
+  case when lower(genre) like '%comedy%' then num_seconds_played_no_ads end as comedy_hours,
+  case when lower(genre) like '%drama%' then num_seconds_played_no_ads end as drama_hours,
+  case when lower(genre) like '%reality%' then num_seconds_played_no_ads end as reality_hours,
+  case when lower(genre) like '%action & adventure%' then num_seconds_played_no_ads end as action_hours,
+  case when lower(genre) like '%sci-fi & fantasy%' then num_seconds_played_no_ads end as scifi_fantasy_hours,
+  case when lower(genre) like '%thriller%' or lower(genre) like '%mystery & suspense%' then num_seconds_played_no_ads end as thriller_mystery_hours,
+  case when lower(genre) like '%crime%' or lower(genre) like '%horror%' then num_seconds_played_no_ads end as crime_horror_hours,
+  case when coppa_flag = true then num_seconds_played_no_ads end as kids_hours,
+  case when lower(device_name) in ('ios mobile', 'android mobile' , 'www', 'web', 'webos') then  num_seconds_played_no_ads end
+  as small_screen_hours,
+  case when lower(device_name) not in ('ios mobile', 'android mobile' , 'www', 'web', 'webos') then  num_seconds_played_no_ads end
+  as large_screen_hours,
+  case when series_movies = 'Movies' then num_seconds_played_no_ads end as movie_hours,
+  case when lower(franchise) = 'wwe' then num_seconds_played_no_ads end as wwe_hours,
+  case when lower(consumption_type) = 'virtual channel' then num_seconds_played_no_ads end as channel_hours,
+  case when (lower(content_type) like '%news%' or lower(genre) like '%news%') and lower(display_name) not in ('dateline nbc', 'dateline', 'killer couples')
+  then num_seconds_played_no_ads end as news_hours,
+  distinct
+    case when num_views_started = 1 and lower(consumption_type) in ('live','vod') then program_franchise
+        when lower(consumption_type) = 'virtual channel' and num_seconds_played_no_ads / 60 >= 5 then program_franchise end as franchise_repertoire
+from viewing
+group by 1,2,3,4,5,6,7,8

@@ -1,0 +1,69 @@
+/*
+base query to select and aggregate viewership data from silver video joined with franchise map and user entitlement
+*/
+
+WITH RankedRequests AS (
+  SELECT
+    silver_video.adobe_date as day,
+    silver_video.consumption_type,
+    silver_video.content_type,
+    silver_video.stream_type,
+    silver_video.display_name,
+    franchise_map.franchise,
+    silver_video.display_season_number,
+    silver_video.display_episode_number,
+    silver_user.entitlement AS entitlement,
+    CAST(silver_video.asset_length AS INT64) as asset_length,
+    silver_video.adobe_tracking_id,
+    adobe_timestamp,
+    silver_video.num_seconds_played_no_ads,
+    ROW_NUMBER() OVER (PARTITION BY silver_video.adobe_date, silver_video.consumption_type, silver_video.content_type, silver_video.stream_type, silver_video.display_name, franchise_map.franchise, silver_video.display_season_number, silver_video.display_episode_number, silver_user.entitlement, CAST(silver_video.asset_length AS INT64) ORDER BY adobe_timestamp) as row_num
+  FROM
+    `{{ data_env }}.PeacockDataMartSilver.SILVER_VIDEO` AS silver_video
+  LEFT JOIN
+    `{{ data_env }}.PeacockDataMartSilver.SILVER_FRANCHISE_MAP` AS franchise_map
+  ON
+    silver_video.display_name = franchise_map.display_name
+  LEFT JOIN
+    `{{ data_env }}.PeacockDataMartSilver.SILVER_USER` AS silver_user
+  ON
+    silver_video.adobe_tracking_id = silver_user.adobe_tracking_id
+    AND silver_video.adobe_date = silver_user.report_date
+  WHERE
+    silver_video.adobe_date = '{{ run_day }}'
+    AND silver_video.num_seconds_played_no_ads > 0
+    AND silver_video.display_name IS NOT NULL
+    AND UPPER(silver_video.display_name) != "UNKNOWN"
+)
+
+SELECT
+  day,
+  consumption_type,
+  content_type,
+  stream_type,
+  display_name,
+  franchise,
+  display_season_number,
+  display_episode_number,
+  entitlement,
+  asset_length,
+  FLOOR((row_num - 1) / 1000000) AS group_num,
+  SUM(num_seconds_played_no_ads) as unqualified_seconds_played,
+  SUM(CASE WHEN num_seconds_played_no_ads > 300 THEN num_seconds_played_no_ads ELSE 0 END) as qualified_seconds_played,
+  COUNT(*) as N,
+  SUM(CASE WHEN num_seconds_played_no_ads > 300 THEN 1 ELSE 0 END) as N_qualified,
+  ARRAY_AGG(STRUCT(adobe_tracking_id, adobe_timestamp, num_seconds_played_no_ads)) AS requests
+FROM
+  RankedRequests
+GROUP BY
+  day,
+  consumption_type,
+  content_type,
+  stream_type,
+  display_name,
+  franchise,
+  display_season_number,
+  display_episode_number,
+  entitlement,
+  asset_length,
+  FLOOR((row_num - 1) / 1000000)

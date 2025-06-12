@@ -1,0 +1,226 @@
+-- Initializing and updating the historical asset length data table
+
+{% if run_day == start_date %}
+-- This block will run only on the first day (initialization)
+WITH grouped AS (
+  SELECT
+    day as adobe_date,
+    display_name,
+    display_season_number,
+    display_episode_number,
+    asset_length,
+    SUM(N) AS N
+  FROM
+    `{{ algo_project }}.{{ dataset }}.content_base`
+  WHERE
+    day = DATE('{{ run_day }}')
+    AND consumption_type = 'Vod'
+    AND stream_type != 'trailer'
+    AND content_type IN ('Tv', 'Movies')
+    AND asset_length >= 300
+  GROUP BY
+    day,
+    display_name,
+    display_season_number,
+    display_episode_number,
+    asset_length
+),
+
+daily_max AS (
+  SELECT
+    display_name,
+    COALESCE(display_season_number, -1) AS display_season_number,  -- Handle NULL season numbers
+    COALESCE(display_episode_number, -1) AS display_episode_number, -- Handle NULL episode numbers
+    adobe_date,
+    ARRAY_AGG(STRUCT(asset_length, N) ORDER BY N DESC LIMIT 1)[OFFSET(0)] AS max_asset -- Choose the asset_length with the largest N
+  FROM
+    grouped
+  GROUP BY
+    display_name, COALESCE(display_season_number, -1), COALESCE(display_episode_number, -1), adobe_date
+)
+SELECT
+  DATE('{{ run_day }}') as adobe_date,
+  display_name,
+  display_season_number,
+  display_episode_number,
+  max_asset.asset_length AS asset_length_daily,
+  CAST(NULL AS FLOAT64)  AS weighted_variance,
+  1 AS days_info,
+  ARRAY[max_asset.asset_length] AS all_asset_lengths,
+  adobe_date AS first_date,
+  adobe_date AS last_date
+FROM
+  daily_max;
+
+{% else %}
+-- This block will run on subsequent days (updates)
+WITH previous_asset_length AS (
+    SELECT
+      *
+    FROM
+      `{{ algo_project }}.{{ dataset }}.{{ table_name }}`
+    WHERE
+      adobe_date = DATE('{{ run_day }}') - 1
+),
+
+grouped AS (
+  SELECT
+    day as adobe_date,
+    display_name,
+    display_season_number,
+    display_episode_number,
+    asset_length,
+    SUM(N) AS N
+  FROM
+    `{{ algo_project }}.{{ dataset }}.content_base`
+  WHERE
+    day = DATE('{{ run_day }}')
+    AND consumption_type = 'Vod'
+    AND stream_type != 'trailer'
+    AND content_type IN ('Tv', 'Movies')
+    AND asset_length >= 300
+  GROUP BY
+    day,
+    display_name,
+    display_season_number,
+    display_episode_number,
+    asset_length
+),
+
+daily_max AS (
+  SELECT
+    display_name,
+    COALESCE(display_season_number, -1) AS display_season_number,  -- Handle NULL season numbers
+    COALESCE(display_episode_number, -1) AS display_episode_number, -- Handle NULL episode numbers
+    adobe_date,
+    ARRAY_AGG(STRUCT(asset_length, N) ORDER BY N DESC LIMIT 1)[OFFSET(0)] AS max_asset -- Choose the asset_length with the largest N
+  FROM
+    grouped
+  GROUP BY
+    display_name, COALESCE(display_season_number, -1), COALESCE(display_episode_number, -1), adobe_date
+),
+
+daily_aggregated AS (
+  SELECT
+    display_name,
+    COALESCE(display_season_number, -1) AS display_season_number,  -- Handle NULL season numbers
+    COALESCE(display_episode_number, -1) AS display_episode_number, -- Handle NULL episode numbers
+    max_asset.asset_length AS asset_length_max_N,
+    adobe_date AS last_date,
+    adobe_date AS first_date,
+    1 AS days_in_aggregation
+  FROM
+    daily_max
+),
+
+updated_data AS (
+  SELECT
+    COALESCE(h.display_name, d.display_name) AS display_name,
+    COALESCE(h.display_season_number, d.display_season_number) AS display_season_number,
+    COALESCE(h.display_episode_number, d.display_episode_number) AS display_episode_number,
+    ARRAY(
+      SELECT value
+      FROM UNNEST(COALESCE(h.all_asset_lengths, ARRAY<INT64>[]) || ARRAY[d.asset_length_max_N]) AS value
+      WHERE value IS NOT NULL
+    ) AS all_asset_lengths,
+    COALESCE(h.days_info, 0) + d.days_in_aggregation AS days_info,
+    LEAST(COALESCE(h.first_date, d.first_date), d.first_date) AS first_date,
+    GREATEST(COALESCE(h.last_date, d.last_date), d.last_date) AS last_date
+  FROM
+    previous_asset_length h
+  FULL OUTER JOIN
+    daily_aggregated d
+  ON
+    h.display_name = d.display_name
+    AND COALESCE(h.display_season_number, -1) = COALESCE(d.display_season_number, -1)
+    AND COALESCE(h.display_episode_number, -1) = COALESCE(d.display_episode_number, -1)
+  WHERE
+    COALESCE(h.days_info, 0) < 90
+),
+
+mode_and_variance AS (
+  SELECT
+    display_name,
+    display_season_number,
+    display_episode_number,
+    (SELECT value FROM UNNEST(all_asset_lengths) AS value GROUP BY value ORDER BY COUNT(1) DESC LIMIT 1) AS asset_length_daily,
+    ARRAY_AGG(CAST(value AS FLOAT64)) AS asset_lengths_float64,  -- Collect all values as FLOAT64 for variance calculation
+    days_info,
+    all_asset_lengths,
+    first_date,
+    last_date
+  FROM
+    updated_data
+  CROSS JOIN UNNEST(all_asset_lengths) AS value
+  GROUP BY
+    display_name,
+    display_season_number,
+    display_episode_number,
+    days_info,
+    all_asset_lengths,
+    first_date,
+    last_date
+),
+
+final_update AS (
+  SELECT
+    display_name,
+    display_season_number,
+    display_episode_number,
+    asset_length_daily,
+    STDDEV_POP(value) AS weighted_variance,  -- Calculate variance on the unnested FLOAT64 values
+    days_info,
+    all_asset_lengths,
+    first_date,
+    last_date
+  FROM
+    mode_and_variance,
+    UNNEST(asset_lengths_float64) AS value  -- Unnest the array of float values here for variance calculation
+  GROUP BY
+    display_name,
+    display_season_number,
+    display_episode_number,
+    asset_length_daily,
+    days_info,
+    all_asset_lengths,
+    first_date,
+    last_date
+),
+
+merged_data AS (
+  SELECT
+    COALESCE(f.display_name, h.display_name) AS display_name,
+    COALESCE(f.display_season_number, h.display_season_number) AS display_season_number,
+    COALESCE(f.display_episode_number, h.display_episode_number) AS display_episode_number,
+    COALESCE(f.asset_length_daily, h.asset_length_daily) AS asset_length_daily,
+    COALESCE(f.weighted_variance, h.weighted_variance) AS weighted_variance,
+    COALESCE(f.days_info, h.days_info) AS days_info,
+    COALESCE(f.all_asset_lengths, h.all_asset_lengths) AS all_asset_lengths,
+    COALESCE(f.first_date, h.first_date) AS first_date,
+    COALESCE(f.last_date, h.last_date) AS last_date
+  FROM
+    final_update f
+  FULL OUTER JOIN
+    previous_asset_length h
+  ON
+    f.display_name = h.display_name
+    AND COALESCE(f.display_season_number, -1) = COALESCE(h.display_season_number, -1)
+    AND COALESCE(f.display_episode_number, -1) = COALESCE(h.display_episode_number, -1)
+)
+
+-- Replace the existing historical table with the updated data
+SELECT
+  DATE('{{ run_day }}') AS adobe_date,
+  display_name,
+  display_season_number,
+  display_episode_number,
+  asset_length_daily,
+  weighted_variance,
+  days_info,
+  all_asset_lengths,
+  first_date,
+  last_date
+FROM
+  merged_data;
+
+{% endif %}

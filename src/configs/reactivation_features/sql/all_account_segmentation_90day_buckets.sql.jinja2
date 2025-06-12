@@ -1,0 +1,64 @@
+select
+  *,
+  case
+    when repertoire90 = 1 then '1'
+    when repertoire90 > 1 and repertoire90 <= 4 then '2-4'
+    when repertoire90 > 4 then '5+'
+  end as repertoire_bucket,
+  case
+    when genre_repertoire90 = 1 then '1'
+    when genre_repertoire90 > 1 and genre_repertoire90 <= 3 then '2-3'
+    when genre_repertoire90 >= 4 then '4+'
+  end as genre_rep_bucket,
+  case
+    when usage90 = 0 then '<1 Hour'
+    when usage90 >= 1 and usage90 <= 5 then '1-5 Hours'
+    when usage90 >= 6 and usage90 <= 20 then '6-20 Hours'
+    else '21+ Hours'
+  end as usage_bucket,
+  case
+    when viewing_sessions90 = 1 then '1 Session'
+    when viewing_sessions90 > 1 and viewing_sessions90 <= 3 then '2-3 Sessions'
+    when viewing_sessions90 >= 4 and viewing_sessions90 <= 11 then '4-11 Sessions'
+    else '12+ Sessions'
+  end as frequency_bucket,
+  case
+    when series_hours is null  then 'Did Not View'
+    when series_hours > 0 and series_hours <= 1 then '<1:30 Hours'
+    when series_hours >= 2 and series_hours <= 9 then '2-9 Hours'
+    else '10+ Hours'
+  end as series_bucket,
+  case
+    when distinct_movies = 0  then 'Did Not View'
+    when distinct_movies = 1 then '1 Movie'
+    when distinct_movies >= 2 and distinct_movies <= 4 then '2-4 Movies'
+    else '5+ Movies'
+  end as movies_bucket,
+  case
+    when sports_hours is null  then 'Did Not View'
+    when sports_hours >= 0 and sports_hours <= 1 then '<1:30 Hours'
+    else '1:30+ Hours'
+  end as sports_bucket,
+  case
+    when current_szn_hours is null  then 'Did Not View'
+    when current_szn_hours >= 0 and current_szn_hours <= 1 then '<1:30 Hours'
+    else '1:30+ Hours'
+  end as current_szn_bucket,
+  case
+    when originals_hours is null or originals_hours = 0  then '<1 Hour'
+    else '1+ Hours'
+  end as originals_szn_bucket,
+  comedy_hours / nullif(usage90, 0) as percent_comedy,
+  drama_hours / nullif(usage90, 0) as percent_drama,
+  reality_hours / nullif(usage90, 0) as percent_reality,
+  action_hours / nullif(usage90, 0) as percent_action,
+  scifi_fantasy_hours / nullif(usage90, 0) as percent_scifi_fantasy,
+  thriller_mystery_hours / nullif(usage90, 0) as percent_thriller_mystery,
+  crime_horror_hours / nullif(usage90, 0) as percent_crime_horror,
+  exclusive_hours / nullif(usage90, 0) as percent_exclusive,
+  kids_hours / nullif(usage90, 0) as percent_kids,
+  small_screen_hours / nullif(usage90, 0) as percent_small_screen,
+  large_screen_hours / nullif(usage90, 0) as percent_large_screen
+# TODO: make upstream tables accessible in template fields
+FROM `{{ algo_project }}.algo_features.all_account_segmentation_90day`
+WHERE day = "{{ run_day }}"

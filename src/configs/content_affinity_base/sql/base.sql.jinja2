@@ -1,0 +1,54 @@
+/*
+base query to select viewership data from silver video joined with franchise map
+*/
+SELECT
+  DATE('{{ run_day }}') as day,
+  consumption_type,
+  adobe_tracking_id,
+  ARRAY_AGG(STRUCT(content,
+      display_name,
+      franchise,
+      requests) ) AS unique_content_viewed
+FROM (
+  SELECT
+    consumption_type,
+    silver_video.adobe_tracking_id,
+  IF
+    (UPPER(franchise_map.franchise) ='OTHER',
+      silver_video.display_name,
+      coalesce(franchise_map.franchise,
+        silver_video.display_name) ) AS content,
+    silver_video.display_name,
+    franchise_map.franchise,
+    ARRAY_AGG(STRUCT( adobe_timestamp,
+        silver_video.num_seconds_played_no_ads AS seconds_watched )) AS requests,
+  FROM
+    `{{ data_env }}.PeacockDataMartSilver.SILVER_VIDEO` AS silver_video
+  LEFT JOIN
+    `{{ data_env }}.PeacockDataMartSilver.SILVER_FRANCHISE_MAP` AS franchise_map
+  ON
+    silver_video.display_name = franchise_map.display_name
+  INNER JOIN
+    `{{ data_env }}.PeacockDataMartSilver.SILVER_USER` AS silver_user
+  ON
+    silver_video.adobe_tracking_id = silver_user.adobe_tracking_id
+    AND silver_video.adobe_date = silver_user.report_date
+  WHERE
+    silver_video.adobe_date = '{{ run_day }}'
+    -- filters to only include valid records
+    AND silver_video.asset_length > 0
+    AND silver_video.num_seconds_played_no_ads > 0
+    AND silver_video.adobe_tracking_id IS NOT NULL
+    AND silver_video.display_name IS NOT NULL
+    AND silver_video.adobe_tracking_id != 'coppa-compliance' -- to protect children under 13
+    AND UPPER(silver_video.display_name) != "UNKNOWN"
+  GROUP BY
+    1,
+    2,
+    3,
+    4,
+    5)
+GROUP BY
+  1,
+  2,
+  3

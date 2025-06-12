@@ -1,0 +1,49 @@
+
+port: pipeline
+name: user_features_data_validation
+trigger:
+  schedule: "0 0 * * 0"
+  start_date: "2024-06-24"
+tasks:
+- name: check_for_duplicate_rows_in_silver_video_daily_rollup
+  src: src/actions
+  action: run_bq_assertion
+  parameters:
+    assertion: assert_one_row_per_user_per_day
+    template_fields:
+      table_name: silver_video_daily_rollup
+- name: check_for_duplicate_rows_in_silver_video_all_time_rollup
+  src: src/actions
+  action: run_bq_assertion
+  parameters:
+    assertion: assert_one_row_per_user_per_day
+    template_fields:
+      table_name: silver_video_all_time_rollup
+- name: check_for_duplicate_rows_in_silver_video_daily_rollup_agg
+  src: src/actions
+  action: run_bq_assertion
+  parameters:
+    assertion: assert_one_row_per_user_per_day
+    template_fields:
+      table_name: silver_video_daily_rollup_agg
+- name: check_for_duplicate_rows_in_silver_user_daily_rollup
+  src: src/actions
+  action: run_bq_assertion
+  parameters:
+    assertion: assert_one_row_per_user_per_day
+    template_fields:
+      table_name: silver_user_daily_rollup
+- name: check_for_duplicate_rows_in_trial_features
+  src: src/actions
+  action: run_bq_assertion
+  parameters:
+    assertion: assert_one_row_per_user_per_day
+    template_fields:
+      table_name: trial_features
+- name: check_for_duplicate_rows_in_user_features
+  src: src/actions
+  action: run_bq_assertion
+  parameters:
+    assertion: assert_one_row_per_user_per_day
+    template_fields:
+      table_name: user_features

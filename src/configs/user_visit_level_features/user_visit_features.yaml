@@ -1,0 +1,45 @@
+port: pipeline
+name: user_visit_features
+trigger:
+  schedule: 0 14 * * *
+  start_date: '2024-09-01'
+tasks:
+- name: user_visit_level_features
+  src: src/actions
+  action: check_bq_partition
+  parameters:
+    table_name: user_visit_level_features
+    dataset: dasc_model
+  retries: 36
+  retry_delay: 300
+  depends_on: []
+- name: user_visit_features_rollup
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: user_visit_features_rollup
+    start_date: '2024-09-01'
+    partition_field: day
+    upstream_table_names: []
+  depends_on:
+  - user_visit_level_features
+- name: user_visit_features_agg
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: user_visit_features_agg
+    start_date: '2024-09-01'
+    partition_field: day
+    upstream_table_names: ['user_visit_features_rollup']
+  depends_on:
+  - user_visit_features_rollup
+- name: user_visit_features
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: user_visit_features
+    start_date: '2024-09-01'
+    partition_field: day
+    upstream_table_names: ['user_visit_features_agg']
+  depends_on:
+  - user_visit_features_agg

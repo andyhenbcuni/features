@@ -1,0 +1,9 @@
+port: pipeline
+name: cleanup_sideload_tables
+trigger: null
+tasks:
+- name: cleanup_sideload_tables
+  src: src/actions
+  action: cleanup_sideload_tables_in_bigquery
+  parameters: {}
+  depends_on: []

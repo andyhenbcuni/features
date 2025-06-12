@@ -1,0 +1,90 @@
+port: pipeline
+name: user_features_v2
+trigger:
+  schedule: 0 12 * * *
+  start_date: '2024-01-01'
+tasks:
+- name: silver_user
+  src: src/actions
+  action: check_bq_partition
+  parameters:
+    table_name: SILVER_USER
+    dataset: PeacockDataMartSilver
+  depends_on: []
+- name: silver_video
+  src: src/actions
+  action: check_bq_partition
+  parameters:
+    table_name: SILVER_VIDEO
+    dataset: PeacockDataMartSilver
+  depends_on: []
+- name: silver_video_daily_rollup_v2
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: silver_video_daily_rollup_v2
+    start_date: '2023-01-01'
+    partition_field: day
+    upstream_table_names: []
+  depends_on:
+  - silver_video
+- name: silver_user_daily_rollup_v2
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: silver_user_daily_rollup_v2
+    start_date: '2023-01-01'
+    partition_field: day
+    upstream_table_names: []
+  depends_on:
+  - silver_user
+- name: trial_features_v2
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: trial_features_v2
+    start_date: '2023-01-01'
+    partition_field: day
+    upstream_table_names: []
+  depends_on:
+  - silver_user
+- name: silver_video_all_time_rollup_v2
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: silver_video_all_time_rollup_v2
+    start_date: '2023-01-01'
+    partition_field: day
+    upstream_table_names: ['silver_video_daily_rollup_v2']
+  depends_on:
+  - silver_video_daily_rollup_v2
+- name: silver_video_daily_rollup_agg_v2
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: silver_video_daily_rollup_agg_v2
+    start_date: '2023-01-01'
+    partition_field: day
+    upstream_table_names: ['silver_video_daily_rollup_v2']
+  depends_on:
+  - silver_video_daily_rollup_v2
+- name: user_features_v2
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: user_features_v2
+    start_date: '2023-01-01'
+    partition_field: day
+    upstream_table_names: [
+      'silver_user_daily_rollup_v2',
+      'silver_video_daily_rollup_v2',
+      'silver_video_daily_rollup_agg_v2',
+      'trial_features_v2',
+      'silver_video_all_time_rollup_v2'
+      ]
+  depends_on:
+  - silver_user_daily_rollup_v2
+  - silver_video_daily_rollup_v2
+  - silver_video_daily_rollup_agg_v2
+  - trial_features_v2
+  - silver_video_all_time_rollup_v2

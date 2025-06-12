@@ -1,0 +1,7 @@
+SELECT  DATE('{{ run_day }}')                             AS day,
+        adobe_tracking_id,
+        MAX(CAST(deeplink_flag IS NOT NULL AS int)) AS deeplink_flag
+FROM `{{ data_env }}.PeacockDataMartSilver.SILVER_VIDEO`
+WHERE adobe_date = '{{ run_day }}'
+GROUP BY  1,
+          2

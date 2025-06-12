@@ -1,0 +1,63 @@
+select
+  *,
+  case
+    when date_of_last_view = gross_add_date or (date_of_last_view != gross_add_Date and frequency_bucket = '1 Session') then 'One & Done/Quarterly'
+    when (avg_days_between_sessions * viewing_days) < 30 and frequency_bucket != '1 Session' and date_of_last_view != gross_add_date then 'Binger'
+    when frequency_bucket = '2-3 Sessions' then 'Monthly'
+    when frequency_bucket = '4-11 Sessions' then 'Fortnightly'
+    when frequency_bucket = '12+ Sessions' then 'Weekly'
+    else null
+  end as habit_group,
+  case
+    when date_of_last_view = gross_add_date and sports_hours / nullif(usage90,0) >= 0.6  then '0 Sports & Done'
+    when date_of_last_view = gross_add_date and movie_hours / nullif(usage90,0) >= 0.6  then '0 Movie & Done'
+    when date_of_last_view = gross_add_date and primary_device_size = 'Small Screen'  then '0 Small Screen & Done'
+    when date_of_last_view = gross_add_date and series_hours / nullif(usage90,0) >= 0.6  then '0 Series & Done'
+    when date_of_last_view = gross_add_date and primary_device_size = 'Large Screen' then '0 Other & Done'
+
+    when date_of_last_view != gross_add_Date and frequency_bucket = '1 Session' then '1 Quarterly'
+
+    when frequency_bucket = '2-3 Sessions' and (avg_days_between_sessions * viewing_days) < 30 then '2 Minor Binger'
+    when frequency_bucket = '4-11 Sessions' and (avg_days_between_sessions * viewing_days) < 30 then '4 Medium Binger'
+    when frequency_bucket = '12+ Sessions' and (avg_days_between_sessions * viewing_days) < 30 then '5 Heavy Binger'
+
+    when frequency_bucket = '2-3 Sessions' and primary_device_size = 'Small Screen'  then '3 Monthly Mobile'
+    when frequency_bucket = '2-3 Sessions' and franchise_repertoire <= 1  then '3 Single Rep Monthly'
+--     when frequency_bucket = '2-3 Sessions' and sports_hours / nullif(usage90,0) >= 0.6  then '3 Sports Monthly'
+    when frequency_bucket = '2-3 Sessions' and movie_hours / nullif(usage90,0) >= 0.6  then '3 Monthly Movie'
+    when frequency_bucket = '2-3 Sessions' and series_hours / nullif(usage90,0) >= 0.6  then '3 Monthly Series'
+    when frequency_bucket = '2-3 Sessions' and primary_device_size = 'Large Screen' then '3 Monthly Other'
+
+    when frequency_bucket = '4-11 Sessions' and primary_device_size = 'Small Screen' then '4 Small Screen Fortniter'
+    when frequency_bucket = '4-11 Sessions' and franchise_repertoire <= 1  then '4 Single Rep Fortnightly'
+    when frequency_bucket = '4-11 Sessions' and sports_hours / nullif(usage90,0) >= 0.6  then '4 Sports Fortnightly'
+    when frequency_bucket = '4-11 Sessions' and series_hours / nullif(usage90,0) >= 0.6  then '4 Series & Fortnight'
+    when frequency_bucket = '4-11 Sessions' and movie_hours / nullif(usage90,0) >= 0.6  then '4 Movies A Fortnight'
+    when frequency_bucket = '4-11 Sessions' and primary_device_size = 'Large Screen' then '4 Other Fortnightly'
+
+
+    when frequency_bucket = '12+ Sessions' and franchise_repertoire <= 1  then '5 Single Rep Weekly'
+    when frequency_bucket = '12+ Sessions' and sports_hours / nullif(usage90,0) >= 0.6  then '5 Sports Weekly'
+    when frequency_bucket = '12+ Sessions' and series_hours / nullif(usage90,0) >= 0.6 then '5 Series Weekly'
+    when frequency_bucket = '12+ Sessions' and news_hours / nullif(usage90,0) >= 0.6  then '5 News Weekly'
+    when frequency_bucket = '12+ Sessions' then '5 Other Weekly'
+    else 'Missed'
+  end as segment,
+  case
+--     when kids_hours / nullif(usage90,0) >= 0.6 then 'Kids'
+    when news_hours / nullif(usage90,0) >= 0.6 then 'News'
+--     when channel_hours / nullif(usage90,0) >= 0.6 then 'Channels'
+--     when wwe_hours / nullif(usage90,0) >= 0.6 then 'WWE'
+    when distinct_movies = viewing_sessions90 or movie_hours / nullif(usage90,0) >= 0.6 then 'Movies'
+    when sports_hours / nullif(usage90,0) >= 0.6 then 'Sports'
+--     when current_szn_hours / nullif(usage90,0) >= 0.6 then 'Current SZN'
+--     when originals_hours / nullif(usage90,0) >= 0.6 then 'Originals'
+--     when exclusive_hours / nullif(usage90,0) >= 0.6 then 'Office/Yellowstone'
+    when series_hours / nullif(usage90,0) >= 0.6 then 'Series'
+    else 'Other'
+  end as content_preference,
+  case
+    when franchise_repertoire <= 1 then 'Single Rep' else 'Multi-Rep' end as rep_group
+from
+  `{{ algo_project }}.algo_features.all_account_segmentation_90day_buckets`
+WHERE day = "{{ run_day }}"

@@ -1,0 +1,11 @@
+SELECT
+  report_date as day,
+  adobe_tracking_id,
+  days_since_last_view,
+  primary_device_name,
+  primary_device_lifetime
+FROM
+  `{{ data_env }}.PeacockDataMartSilver.SILVER_PRIMARY_DEVICES`
+WHERE
+  date_of_last_view is not null
+  and report_date = '{{ run_day }}'

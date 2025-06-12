@@ -1,0 +1,3 @@
+ASSERT (
+  SELECT COUNT(*) FROM `{{ algo_project }}.{{ dataset }}.pavo_lift`
+) <= 10000000

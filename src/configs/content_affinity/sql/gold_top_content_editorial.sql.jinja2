@@ -1,0 +1,10 @@
+/*
+Assertion for the existence of data for the current date
+in gold top content.
+*/
+ASSERT EXISTS(SELECT
+  1
+FROM
+  `{{ data_env }}.PeacockDataMartEditorialGold.GOLD_TOP_CONTENT_EDITORIAL`
+WHERE
+  Date = "{{ run_day }}")

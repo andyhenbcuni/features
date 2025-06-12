@@ -1,0 +1,164 @@
+WITH community AS (
+  SELECT
+    EXTRACT(YEAR FROM _PARTITIONDATE) AS year,
+    EXTRACT(MONTH FROM _PARTITIONDATE) AS month,
+    content,
+    community
+  FROM `{{ algo_project }}.caps.stabilized_communities`
+  WHERE _PARTITIONDATE IN (
+    SELECT LAST_DAY(dates) AS last_date
+    FROM UNNEST(
+      GENERATE_DATE_ARRAY(
+        '2023-08-31',
+        DATE_SUB(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL 1 MONTH),
+        INTERVAL 1 MONTH
+      )
+    ) AS dates
+  )
+),
+consumption AS (
+  SELECT
+    IF(franchise != 'Other', franchise, display_name) AS content,
+    display_name,
+    display_season_number,
+    display_episode_number,
+    EXTRACT(YEAR FROM adobe_date) AS year,
+    EXTRACT(MONTH FROM adobe_date) AS month,
+    SUM(usage_qualified_mins) AS usage_qualified_mins
+  FROM `{{ algo_project }}.{{ dataset }}.ama_base`
+  WHERE adobe_date >= '2023-08-01'
+  AND consumption_type = 'Vod'
+  GROUP BY 1, 2, 3, 4, 5, 6
+),
+cmp_len AS (
+  SELECT
+    cm.content,
+    cmp.display_name,
+    cmp.display_season_number,
+    cmp.display_episode_number,
+    cm.year,
+    cm.month,
+    cmp.usage_qualified_mins,
+    al.asset_length,
+    cm.community
+  FROM community AS cm
+  LEFT JOIN consumption AS cmp USING(year, month, content)
+  LEFT JOIN `{{ algo_project }}.{{ dataset }}.asset_length` AS al
+    ON cmp.display_name = al.display_name
+    AND COALESCE(cmp.display_season_number, -1) = COALESCE(al.display_season_number, -1)
+    AND COALESCE(cmp.display_episode_number, -1) = COALESCE(al.display_episode_number, -1)
+),
+filtered_cmp_len AS (
+  SELECT *
+  FROM cmp_len
+  WHERE asset_length IS NOT NULL
+    AND (display_season_number > 0 OR display_season_number IS NULL)
+    AND NOT (display_season_number IS NOT NULL AND display_episode_number IS NULL)
+),
+-- Perform initial aggregation
+title_agg_initial AS (
+  SELECT
+    content,
+    display_name,
+    display_season_number,
+    display_episode_number,
+    SUM(usage_qualified_mins) AS usage_qualified_mins,
+    ANY_VALUE(asset_length) AS asset_length,
+    ANY_VALUE(community) AS community
+  FROM filtered_cmp_len
+  GROUP BY content, display_name, display_season_number, display_episode_number
+),
+-- Apply the HAVING clause in an outer query
+title_agg AS (
+  SELECT *
+  FROM title_agg_initial
+  WHERE usage_qualified_mins >= 3600
+),
+-- Compute total usage and counts per display_name
+display_name_usage AS (
+  SELECT
+    display_name,
+    SUM(usage_qualified_mins) AS usage_name,
+    COUNT(*) AS N,
+    SUM(CASE WHEN display_season_number IS NULL THEN 1 ELSE 0 END) AS season_NA
+  FROM title_agg
+  GROUP BY display_name
+),
+-- Join back to get usage_name, N, and season_NA per record
+title_agg_with_usage_name AS (
+  SELECT
+    ta.*,
+    du.usage_name,
+    du.N,
+    du.season_NA
+  FROM title_agg ta
+  LEFT JOIN display_name_usage du ON ta.display_name = du.display_name
+),
+-- Calculate usage_name_percent
+title_agg_with_percent AS (
+  SELECT
+    *,
+    100 * usage_qualified_mins / usage_name AS usage_name_percent
+  FROM title_agg_with_usage_name
+),
+-- Compute NA_percent per display_name
+na_percent_per_display_name AS (
+  SELECT
+    display_name,
+    100 * SUM(CASE WHEN display_season_number IS NULL AND display_episode_number IS NULL THEN usage_qualified_mins ELSE 0 END) / usage_name AS NA_percent
+  FROM title_agg_with_usage_name
+  GROUP BY display_name, usage_name
+),
+-- Join NA_percent back to the main table
+title_agg_with_na_percent AS (
+  SELECT
+    ta.*,
+    np.NA_percent
+  FROM title_agg_with_percent ta
+  LEFT JOIN na_percent_per_display_name np ON ta.display_name = np.display_name
+),
+-- Determine good_data based on conditions
+title_agg_with_good_data AS (
+  SELECT
+    *,
+    CASE
+      WHEN (N = 1) OR (N > 1 AND season_NA = 0) THEN TRUE
+      WHEN (N > 1 AND season_NA > 0 AND NA_percent <= 1) THEN
+        CASE WHEN NA_percent = usage_name_percent THEN FALSE ELSE TRUE END
+      WHEN (N > 1 AND season_NA > 0 AND NA_percent > 1 AND NA_percent < 99) THEN TRUE
+      WHEN (N > 1 AND season_NA > 0 AND NA_percent >= 99) THEN
+        CASE WHEN NA_percent = usage_name_percent THEN TRUE ELSE FALSE END
+      ELSE NULL
+    END AS good_data
+  FROM title_agg_with_na_percent
+),
+-- Final aggregation
+out_asset AS (
+  SELECT
+    content,
+    SUM(asset_length) AS asset_length,
+  FROM title_agg_with_good_data
+  WHERE good_data = TRUE
+  GROUP BY content
+)
+
+SELECT
+  community,
+  year,
+  month,
+  SUM(usage_qualified_mins) AS usage_qualified_mins,
+  SUM(oa.asset_length) AS asset_length,
+  SUM(usage_qualified_mins) / SUM(asset_length) AS AMA
+FROM (
+  SELECT
+    content,
+    year,
+    month,
+    SUM(usage_qualified_mins) AS usage_qualified_mins,
+    ANY_VALUE(community) AS community
+  FROM cmp_len
+  GROUP BY content, year, month
+) AS cm
+INNER JOIN out_asset AS oa USING (content)
+GROUP BY community, year, month
+ORDER BY community, year, month

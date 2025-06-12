@@ -1,0 +1,101 @@
+port: pipeline
+name: content_affinity
+trigger:
+  schedule: "0 18 * * *"
+  start_date: "2024-04-26"
+tasks:
+- name: gold_top_content_editorial
+  action: run_bq_assertion
+  src: src/actions
+  parameters:
+    assertion: gold_top_content_editorial
+- name: top_content
+  depends_on: [gold_top_content_editorial]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    table_name: top_content
+    partition_field: day
+    start_date: "2024-04-26"
+    upstream_table_names: []
+- name: check_base_range_partitions
+  action: run_bq_assertion
+  src: src/actions
+  parameters:
+    assertion: check_base_range_partitions
+- name: lift_base
+  depends_on: [top_content, check_base_range_partitions]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    table_name: lift_base
+    partition_field: day
+    start_date: "2024-04-26"
+    upstream_table_names: ['top_content']
+- name: user_counts
+  depends_on: [lift_base]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    table_name: user_counts
+    partition_field: day
+    start_date: "2024-04-26"
+    upstream_table_names: ['lift_base']
+- name: content_counts
+  depends_on: [lift_base]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    table_name: content_counts
+    partition_field: day
+    start_date: "2024-04-26"
+    upstream_table_names: ['lift_base']
+- name: content_subset_counts
+  depends_on: [lift_base]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    table_name: content_subset_counts
+    partition_field: day
+    start_date: "2024-04-26"
+    upstream_table_names: ['lift_base']
+- name: permutation_counts
+  depends_on: [content_subset_counts]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    table_name: permutation_counts
+    partition_field: day
+    start_date: "2024-04-26"
+    upstream_table_names: ['content_subset_counts']
+- name: content_affinity
+  depends_on: [permutation_counts, content_counts, user_counts]
+  action: sync_partitioned_table
+  src: src/actions
+  parameters:
+    table_name: content_affinity
+    partition_field: day
+    start_date: "2024-04-26"
+    upstream_table_names: ['permutation_counts', 'content_counts', 'user_counts']
+- name: pavo_lift
+  depends_on: [content_affinity]
+  action: sync_unpartitioned_table
+  src: src/actions
+  parameters:
+    table_name: pavo_lift
+    start_date: "2024-04-26"
+    upstream_table_names: ['content_affinity']
+- name: pavo_non_franchise_lift_top_50
+  depends_on: [content_affinity]
+  action: sync_unpartitioned_table
+  src: src/actions
+  parameters:
+    table_name: pavo_non_franchise_lift_top_50
+    start_date: "2024-04-26"
+    upstream_table_names: ['content_affinity']
+- name: pavo_lift_size_assertion
+  depends_on: [pavo_lift]
+  action: run_bq_assertion
+  src: src/actions
+  parameters:
+    assertion: pavo_lift_size_assertion

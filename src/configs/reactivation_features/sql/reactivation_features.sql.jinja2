@@ -1,0 +1,38 @@
+SELECT  G.primary_device,
+		A.subscription_entitlement,
+		A.entitlement,
+		A.gross_add_date,
+		A.bundling_partner,
+		A.adobe_tracking_id,
+		abs(mod(farm_fingerprint(concat(A.adobe_tracking_id,'reactivation_202109' )), 100)) as mod_user_hash,
+		* except(adobe_tracking_id,deeplink_flag,household_id,ever_unsubscribed_flag,ever_paid,report_date,entitlement,bundling_partner,gross_add_date,primary_device,subscription_entitlement,day),
+		A.household_id,
+        A.report_date AS day,
+        CASE WHEN A.bundling_partner = 'N/A' THEN concat(A.entitlement,", unbundled") # TODO:
+		else concat(A.entitlement, ", bundled")
+		end AS entitlement_w_bundling,
+		CASE WHEN A.gross_add_date < '2020-07-15' THEN 1 -- soft launch flag for gross add prior to 7/15
+ 		else 0
+		end AS soft_launch_flag,
+		CASE WHEN deeplink_flag = 1 THEN 1 else 0 -- change nulls to 0
+ 		end AS deeplink_flag,
+  		CASE WHEN ever_unsubscribed_flag = 1 THEN 1 else 0 -- change nulls to 0
+ 		end AS ever_unsubscribed_flag,
+		CASE WHEN ever_paid = 'Paying' THEN 1 else 0 end AS ever_paid
+FROM `{{ data_env }}.PeacockDataMartSilver.SILVER_USER` A
+LEFT JOIN (SELECT * FROM `{{ algo_project }}.algo_features.last_view` WHERE day = '{{ run_day }}') B
+using(adobe_tracking_id)
+LEFT JOIN (SELECT * FROM `{{ algo_project }}.algo_features.deeplinks` WHERE day = '{{ run_day }}') C
+using(adobe_tracking_id, day)
+LEFT JOIN (SELECT * FROM `{{ algo_project }}.algo_features.email_unsubscribes` WHERE day = '{{ run_day }}') D
+using(household_id, day)
+LEFT JOIN (SELECT * FROM `{{ algo_project }}.algo_features.first_view` WHERE day = '{{ run_day }}') E
+using(adobe_tracking_id, day)
+LEFT JOIN(SELECT * FROM `{{ algo_project }}.algo_features.lapse_helper` WHERE day = '{{ run_day }}') F
+ON A.adobe_tracking_id = F.adobe_tracking_id
+LEFT JOIN (SELECT * FROM `{{ algo_project }}.algo_features.user_segments` WHERE day = '{{ run_day }}') G
+ON A.adobe_tracking_id = G.adobe_tracking_id
+LEFT JOIN (select * from `{{ data_env }}.dasc_model.marketing_visit_features_history`where is_training_data is False
+and obs_end_date = (select max(obs_end_date) from `{{ data_env }}.dasc_model.marketing_visit_features_history` where is_training_data is False)) H
+on A.adobe_tracking_id = H.tracking_id
+WHERE A.report_date = '{{ run_day }}' and  A.account_status_event IN ('Lapse Event', 'Lapsed')

@@ -1,0 +1,6 @@
+SELECT
+    *
+  FROM
+    `{{ algo_project }}.{{ dataset }}.user_visit_features_agg`
+  WHERE
+    day = "{{ run_day }}"

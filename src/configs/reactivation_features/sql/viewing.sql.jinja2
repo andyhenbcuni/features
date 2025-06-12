@@ -1,0 +1,9 @@
+select *
+FROM `{{ algo_project }}.algo_features.video` as video
+inner join cohort
+on
+  video.adobe_tracking_id = cohort.tracking_id
+and
+  video.day <= cohort.date_of_last_view
+and
+  video.day >= date_sub(cohort.date_of_last_view, interval 89 day)

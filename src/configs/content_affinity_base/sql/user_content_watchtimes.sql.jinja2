@@ -1,0 +1,18 @@
+-- Gets the watchtime for each piece of content, for each user, non-vod/vod on the given day.
+-- We include non-vod vs vod grouping so that non-vod viewership can be filtered for
+-- shows that never appear in gold top titles.
+SELECT
+    DATE('{{ run_day }}') as day,
+    adobe_tracking_id,
+    content,
+    UPPER(consumption_type) != 'VOD' AS is_non_vod,
+    SUM(seconds_watched) AS seconds_watched
+FROM `{{ algo_project }}.algo_features.base`,
+UNNEST(unique_content_viewed) ucv,
+UNNEST (requests) r
+WHERE day='{{ run_day }}'
+AND seconds_watched/60 >= 5
+-- We never want virtual channel viewership
+AND UPPER(consumption_type) != 'VIRTUAL CHANNEL'
+AND UPPER(content) != 'AFFILIATE CHANNELS'
+GROUP BY 1, 2, 3, 4

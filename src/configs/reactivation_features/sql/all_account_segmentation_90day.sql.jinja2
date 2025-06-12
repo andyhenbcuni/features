@@ -1,0 +1,186 @@
+with cohort as (
+select
+  report_date,
+  adobe_tracking_id as tracking_id,
+  household_id,
+  date_of_last_view,
+  entitlement,
+  bundling_partner,
+  case
+    when entitlement = 'Free' then 'Free'
+    when entitlement = 'Premium' and bundling_partner != 'N/A' then 'Bundled Premium'
+    else 'Paid SVOD'
+  end as sub_type,
+  gross_add_date,
+  date_diff(report_date, gross_add_date, day) + 1 as tenure_days
+from `{{ data_env }}.PeacockDataMartSilver.SILVER_PRIMARY_DEVICES`
+where report_date = "{{ run_day }}"
+and date_of_last_view is not null
+),
+
+-- grab viewing for last 90 days of activity
+# TODO: is this a good candidate to break out?
+viewing as (
+select *
+# TODO: make upstream tables accessible in template fields
+FROM `{{ algo_project }}.algo_features.video` as video
+inner join cohort
+on
+  video.adobe_tracking_id = cohort.tracking_id
+and
+  video.day <= cohort.date_of_last_view
+and
+  video.day >= date_sub(cohort.date_of_last_view, interval 89 day)
+),
+
+-- aggregate account viewing for the 90 day period
+viewing_aggregate as (
+select
+  report_date,
+  adobe_tracking_id,
+
+  date_of_last_view,
+  entitlement,
+  bundling_partner,
+  sub_type,
+  gross_add_date,
+  tenure_days,
+  sum(num_seconds_played_no_ads) / 3600 as usage90,
+  count(distinct
+        case when num_views_started = 1 and lower(consumption_type) != 'virtual channel' then program_clean
+              when num_seconds_played_no_ads / 60 >= 5 and lower(consumption_type) = 'virtual channel' then program_clean
+        end) as repertoire90,
+  count(distinct case when num_views_started = 1 then genre end) as genre_repertoire90,
+  count(distinct case when num_views_started = 1 then session_id end) as viewing_sessions90,
+  nullif(sum( case when sports_flag = 'Sports' then num_seconds_played_no_ads end), 0) / 3600 as sports_hours,
+  nullif(sum( case when current_szn_flag = 'Current Season' then num_seconds_played_no_ads end), 0) / 3600 as current_szn_hours,
+  nullif(sum( case  when originals_flag = 'Original' then num_seconds_played_no_ads end), 0) / 3600 as originals_hours,
+  nullif(sum( case when series_movies = 'Series' then num_seconds_played_no_ads end), 0) / 3600 as series_hours,
+  nullif(sum( case when exclusives_flag = 'Exclusive' then num_seconds_played_no_ads end), 0) / 3600 as exclusive_hours,
+  ifnull(count(distinct case when num_views_started = 1 and series_movies = 'Movies' then program_clean end), 0) as distinct_movies,
+  count(distinct case when num_views_started = 1 then day end) as viewing_days,
+  sum(case when lower(genre) like '%comedy%' then num_seconds_played_no_ads end) / 3600 as comedy_hours,
+  sum(case when lower(genre) like '%drama%' then num_seconds_played_no_ads end) / 3600 as drama_hours,
+  sum(case when lower(genre) like '%reality%' then num_seconds_played_no_ads end) / 3600 as reality_hours,
+  sum(case when lower(genre) like '%action & adventure%' then num_seconds_played_no_ads end) / 3600 as action_hours,
+  sum(case when lower(genre) like '%sci-fi & fantasy%' then num_seconds_played_no_ads end) / 3600 as scifi_fantasy_hours,
+  sum(case when lower(genre) like '%thriller%' or lower(genre) like '%mystery & suspense%' then num_seconds_played_no_ads end) / 3600 as thriller_mystery_hours,
+  sum(case when lower(genre) like '%crime%' or lower(genre) like '%horror%' then num_seconds_played_no_ads end) / 3600 as crime_horror_hours,
+  sum(case when coppa_flag = true then num_seconds_played_no_ads end) / 3600 as kids_hours,
+  sum(case when lower(device_name) in ('ios mobile', 'android mobile' , 'www', 'web', 'webos') then  num_seconds_played_no_ads end) / 3600
+  as small_screen_hours,
+  sum(case when lower(device_name) not in ('ios mobile', 'android mobile' , 'www', 'web', 'webos') then  num_seconds_played_no_ads end) / 3600
+  as large_screen_hours,
+  sum(case when series_movies = 'Movies' then num_seconds_played_no_ads end) / 3600 as movie_hours,
+  sum(case when lower(franchise) = 'wwe' then num_seconds_played_no_ads end) / 3600 as wwe_hours,
+  sum(case when lower(consumption_type) = 'virtual channel' then num_seconds_played_no_ads end) / 3600 as channel_hours,
+  sum(case when (lower(content_type) like '%news%' or lower(genre) like '%news%') and lower(display_name) not in ('dateline nbc', 'dateline', 'killer couples')
+  then num_seconds_played_no_ads end) / 3600 as news_hours,
+  count(distinct
+        case when num_views_started = 1 and lower(consumption_type) in ('live','vod') then program_franchise
+              when lower(consumption_type) = 'virtual channel' and num_seconds_played_no_ads / 60 >= 5 then program_franchise end) as franchise_repertoire
+from viewing
+group by 1,2,3,4,5,6,7,8
+),
+
+-- calculate primary device during the period
+pd as (
+select
+  distinct tid,
+  device as primary_device
+from (
+  select
+    *,
+    row_number() over (partition by tid order by total_hours desc) as viewing_rank
+  from (
+    select
+      adobe_tracking_id as tid,
+      lower(device_name) as device,
+      sum(num_seconds_played_no_ads) / 3600 as total_hours
+    from viewing
+    where device_name is not null
+    group by 1,2
+  )
+)
+where viewing_rank = 1
+),
+
+-- days between viewing sessions
+time_between_sessions as (
+select
+  adobe_tracking_id as tid2,
+  avg(datetime_diff(next_session_start, start_time, day)) as avg_days_between_sessions,
+  avg(datetime_diff(next_session_start, start_time, hour)) as avg_hours_between_sessions
+from (
+  select
+    *,
+    lead(start_time) over (partition by adobe_tracking_id order by start_time asc) as next_session_start
+  from (
+    select
+      distinct
+      session_id,
+      adobe_tracking_id,
+      min(adobe_timestamp) as start_time
+    from viewing
+    where num_views_started = 1
+    group by 1,2
+  )
+)
+group by 1
+)
+
+-- join together into 1 table
+select
+  report_date AS day,
+  adobe_tracking_id,
+  date_of_last_view,
+  entitlement,
+  bundling_partner,
+  sub_type,
+  gross_add_date,
+  tenure_days,
+  case
+    when tenure_days <= 30 then '1-30 Days'
+    when tenure_days > 30 and tenure_days <= 60 then '31-60 Days'
+    when tenure_days > 60 and tenure_days <= 90 then '61-90 Days'
+    when tenure_days > 90 and tenure_days <= 120 then '91-120 Days'
+    else '121+ Days'
+  end as tenure_bucket,
+  primary_device,
+  case
+    when lower(primary_device) in ('ios mobile', 'android mobile' , 'www', 'web', 'webos') then 'Small Screen'
+    else 'Large Screen'
+  end as primary_device_size,
+  usage90,
+  repertoire90,
+  genre_repertoire90,
+  viewing_sessions90,
+  sports_hours as sports_hours, -- null if didnt view
+  current_szn_hours as current_szn_hours, -- null if didnt view
+  originals_hours as originals_hours, -- null if didnt view
+  series_hours as series_hours, -- null if didnt view
+  distinct_movies,
+  avg_days_between_sessions,
+  avg_hours_between_sessions,
+  viewing_days,
+  comedy_hours,
+  drama_hours,
+  reality_hours,
+  action_hours,
+  scifi_fantasy_hours,
+  thriller_mystery_hours,
+  crime_horror_hours,
+  exclusive_hours,
+  kids_hours,
+  small_screen_hours,
+  large_screen_hours,
+  movie_hours,
+  wwe_hours,
+  channel_hours,
+  news_hours,
+  franchise_repertoire
+from viewing_aggregate
+left join pd
+on viewing_aggregate.adobe_tracking_id = pd.tid
+left join time_between_sessions
+on viewing_aggregate.adobe_tracking_id = time_between_sessions.tid2

@@ -1,0 +1,69 @@
+port: pipeline
+name: content_base
+trigger:
+  schedule: "0 18 * * *"
+  start_date: "2024-08-15"
+tasks:
+- name: silver_video
+  action: check_bq_partition
+  src: src/actions
+  parameters:
+    dataset: PeacockDataMartSilver
+    table_name: SILVER_VIDEO
+- name: silver_user
+  action: check_bq_partition
+  src: src/actions
+  parameters:
+    dataset: PeacockDataMartSilver
+    table_name: SILVER_USER
+- name: content_base
+  depends_on: [silver_video, silver_user]
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: content_base
+    partition_field: day
+    start_date: '2021-01-01'
+    upstream_table_names: []
+- name: ama_base
+  depends_on: [content_base]
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: ama_base
+    partition_field: adobe_date
+    start_date: '2021-01-01'
+    upstream_table_names: ['content_base']
+- name: asset_length_internal
+  depends_on: [content_base]
+  src: src/actions
+  action: sync_partitioned_table
+  parameters:
+    table_name: asset_length_internal
+    partition_field: adobe_date
+    start_date: '2021-01-01'
+    upstream_table_names: ['content_base']
+- name: asset_length
+  depends_on: [asset_length_internal]
+  src: src/actions
+  action: sync_unpartitioned_table
+  parameters:
+    table_name: asset_length
+    start_date: '2021-01-01'
+    upstream_table_names: ['asset_length_internal']
+- name: scc_ama
+  depends_on: [ama_base, asset_length]
+  src: src/actions
+  action: sync_unpartitioned_table
+  parameters:
+    table_name: scc_ama
+    start_date: '2023-09-01'
+    upstream_table_names: ['ama_base', 'asset_length']
+- name: content_audience_ama
+  depends_on: [scc_ama]
+  src: src/actions
+  action: sync_unpartitioned_table
+  parameters:
+    table_name: content_audience_ama
+    start_date: '2023-09-01'
+    upstream_table_names: ['scc_ama']

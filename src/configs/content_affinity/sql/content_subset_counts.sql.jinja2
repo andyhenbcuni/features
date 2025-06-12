@@ -1,0 +1,14 @@
+/*
+Count of distinct viewers per day, day_span, rollup_franchise, content_subset
+grouping.
+*/
+SELECT
+    day,
+    day_span,
+    rollup_franchise,
+    content_subset,
+    COUNT(DISTINCT adobe_tracking_id) AS subset_multiplier
+FROM
+    `{{ algo_project }}.{{ dataset }}.lift_base`
+WHERE day = '{{ run_day }}'
+GROUP BY 1, 2, 3, 4

@@ -1,0 +1,5 @@
+SELECT  DISTINCT household_id,
+        event_date                        AS day,
+        1 AS ever_unsubscribed_flag
+FROM `{{ data_env }}.PeacockDataMartSilver.SILVER_MPARTICLE_BRAZE`
+WHERE event_date = '{{run_day}}' and event_name = 'Email Unsubscribes'

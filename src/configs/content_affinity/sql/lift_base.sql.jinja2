@@ -1,0 +1,59 @@
+/*
+Creates the lift_base table, which has the order of viewership
+of content for each user.
+*/
+WITH day_spans_rollup AS (
+  SELECT day_span, rollup_franchise
+  FROM UNNEST([30, 90, 365]) AS day_span,
+  UNNEST([TRUE, FALSE]) AS rollup_franchise
+),
+top_content AS (
+  SELECT *
+  FROM `{{ algo_project }}.{{ dataset }}.top_content`
+  WHERE day='{{ run_day }}'
+),
+first_watch_timestamps AS (
+  SELECT
+    day_spans_rollup.day_span,
+    rollup_franchise,
+    adobe_tracking_id,
+    IF (rollup_franchise,
+            c.content, -- content is franchise name when franchise exists, otherwise display_name
+            c.display_name) AS content_item,
+    MIN(r.adobe_timestamp) AS first_watch_timestamp,
+  FROM `{{ algo_project }}.{{ dataset }}.base` base,
+  UNNEST(unique_content_viewed) AS c,
+  UNNEST(c.requests) AS r,
+  day_spans_rollup
+  LEFT JOIN
+    top_content
+  ON
+    c.content = top_content.content
+    AND day_spans_rollup.day_span = top_content.day_span
+  WHERE
+      ( -- filters for all titles
+        r.seconds_watched / 60 >= 10
+        AND base.day >= (DATE('{{ run_day }}') - day_spans_rollup.day_span)
+        AND base.day < DATE('{{ run_day }}')
+      )
+      AND
+          (
+            -- the filter that works for most titles
+            ( UPPER(consumption_type) = 'VOD'
+            OR top_content.content IS NOT NULL )
+          )
+  GROUP BY 1, 2, 3, 4
+)
+
+SELECT
+  DATE('{{ run_day }}') AS day,
+  day_span,
+  rollup_franchise,
+  adobe_tracking_id,
+  STRING_AGG(
+          content_item,
+          '~~~' ORDER BY first_watch_timestamp ASC, content_item) content_subset
+FROM
+    first_watch_timestamps
+GROUP BY
+  1, 2, 3, 4

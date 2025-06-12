@@ -1,0 +1,39 @@
+  /*
+  select top 100 titles by hours watched
+  from 'GOLD_TOP_CONTENT_EDITORIAL'
+  with franchise information, per day span
+  */
+
+WITH day_spans AS (
+    SELECT day_span
+    FROM UNNEST([30, 90, 365]) AS day_span
+),
+
+hours_watched_dayspans AS (
+  SELECT
+    day_span,
+    CASE
+      WHEN Franchise IS NOT NULL AND UPPER( Franchise) != 'OTHER' THEN Franchise
+    ELSE
+      Title
+    END AS content,
+    SUM(Total_Hours_Watched) AS Hours_Watched,
+    ROW_NUMBER() OVER(PARTITION BY day_span ORDER BY SUM(Total_Hours_Watched) DESC) hours_watched_rank
+  FROM
+    `{{ data_env }}.PeacockDataMartEditorialGold.GOLD_TOP_CONTENT_EDITORIAL`,
+    day_spans
+  WHERE
+    UPPER( Consumption_Type) != 'VOD'
+    AND date >= DATE('{{ run_day }}') - day_span
+      AND date < DATE('{{ run_day }}')
+      AND UPPER( Title) != 'NA'
+      AND UPPER( Title) != 'N/A'
+    GROUP BY
+      1, 2
+)
+
+SELECT
+    DATE('{{ run_day }}') AS day,
+    *
+FROM hours_watched_dayspans
+WHERE hours_watched_rank <= 100

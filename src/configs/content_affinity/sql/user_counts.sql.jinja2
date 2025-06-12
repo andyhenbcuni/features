@@ -1,0 +1,12 @@
+/*
+Gets the total number of users
+for the given day, day_span, rollup_franchise grouping.
+*/
+SELECT
+    day,
+    day_span,
+    rollup_franchise,
+    COUNT(DISTINCT adobe_tracking_id) AS n
+FROM `{{ algo_project }}.{{ dataset }}.lift_base`
+WHERE day = '{{ run_day }}'
+GROUP BY 1, 2, 3

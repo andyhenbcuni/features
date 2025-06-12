@@ -1,0 +1,18 @@
+select
+  distinct tid,
+  device as primary_device
+from (
+  select
+    *,
+    row_number() over (partition by tid order by total_hours desc) as viewing_rank
+  from (
+    select
+      adobe_tracking_id as tid,
+      lower(device_name) as device,
+      sum(num_seconds_played_no_ads) / 3600 as total_hours
+    from viewing
+    where device_name is not null
+    group by 1,2
+  )
+)
+where viewing_rank = 1

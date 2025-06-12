@@ -1,0 +1,49 @@
+SELECT
+  *
+FROM (
+  SELECT
+    *
+  FROM
+    `{{ algo_project }}.{{ dataset }}.silver_user_daily_rollup`
+  WHERE
+    day = "{{ run_day }}")
+FULL OUTER JOIN (
+  SELECT
+    *
+  FROM
+    `{{ algo_project }}.{{ dataset }}.silver_video_daily_rollup`
+  WHERE
+    day = "{{ run_day }}")
+USING
+  (day,
+    adobe_tracking_id)
+FULL OUTER JOIN (
+  SELECT
+    *
+  FROM
+    `{{ algo_project }}.{{ dataset }}.silver_video_daily_rollup_agg`
+  WHERE
+    day = "{{ run_day }}")
+USING
+  (day,
+    adobe_tracking_id)
+FULL OUTER JOIN (
+  SELECT
+    *
+  FROM
+    `{{ algo_project }}.{{ dataset }}.trial_features`
+  WHERE
+    day = "{{ run_day }}")
+USING
+  (day,
+    adobe_tracking_id)
+FULL OUTER JOIN (
+  SELECT
+    *
+  FROM
+    `{{ algo_project }}.{{ dataset }}.silver_video_all_time_rollup`
+  WHERE
+    day = "{{ run_day }}")
+USING
+  (day,
+    adobe_tracking_id)

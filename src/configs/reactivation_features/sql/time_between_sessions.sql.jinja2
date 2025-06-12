@@ -1,0 +1,20 @@
+select
+  adobe_tracking_id as tid2,
+  avg(datetime_diff(next_session_start, start_time, day)) as avg_days_between_sessions,
+  avg(datetime_diff(next_session_start, start_time, hour)) as avg_hours_between_sessions
+from (
+  select
+    *,
+    lead(start_time) over (partition by adobe_tracking_id order by start_time asc) as next_session_start
+  from (
+    select
+      distinct
+      session_id,
+      adobe_tracking_id,
+      min(adobe_timestamp) as start_time
+    from viewing
+    where num_views_started = 1
+    group by 1,2
+  )
+)
+group by 1
