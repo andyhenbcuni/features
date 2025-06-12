@@ -1,0 +1,2 @@
+dags_dir = "../dags_dir"
+is_manual_test_env=false
